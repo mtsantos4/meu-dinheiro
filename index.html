@@ -191,7 +191,9 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const COLS = ['contas','cartoes','categorias','transacoes','ativos','operacoes','mercado','proventos','config'];
 const D = {}, U = {}; COLS.forEach(c => { D[c] = {}; U[c] = {}; });   // D = visão combinada; U = dados do usuário
 const G = { mercado:{}, proventos:{}, config:{} };                      // dados de mercado (rotina diária)
-const loaded = {}; let store = null, sb = null, userId = null, userEmail = '', canWrite = true, dbFail = false, started = null;
+const loaded = {}; let store = null, sb = null, userId = null, userEmail = '', userNome = '', canWrite = true, dbFail = false, started = null;
+const LINK_TIPO = (location.hash.match(/type=([a-z_]+)/)||[])[1] || ''; let linkTratado = false;
+let atualizando = null; // {desde: ms}
 const ui = { view: (location.hash||'#inicio').slice(1) || 'inicio', mes: monthOf(todayISO()), f:{conta:'',cat:'',tipo:'',q:''}, cartTab:'ativos', cfgTab:'categorias' };
 const VIEWS = ['inicio','transacoes','contas','carteira','ajustes'];
 if (!VIEWS.includes(ui.view)) ui.view='inicio';
@@ -270,6 +272,7 @@ function aplicarDoc(tipo, row){
 function aplicarMerc(tipo, row){
   if (!row || !G[row.col]) return;
   if (tipo==='DELETE') delete G[row.col][row.id]; else G[row.col][row.id] = {...(row.data||{}), id:row.id};
+  if (row.col==='config' && row.id==='mercado' && atualizando && Date.parse(row.data?.atualizadoEm||0) >= atualizando.desde - 5000){ atualizando=null; toast('Cotações e proventos atualizados'); }
   rebuild(row.col); scheduleRender(); if (row.col==='proventos') scheduleSync();
 }
 let unsub=null;
@@ -288,6 +291,7 @@ async function startData(){
   document.body.classList.remove('deslogado'); renderNav(); $('#main').innerHTML='<div class="loading">Carregando seus dados…</div>';
   await carregarDados();
   if (unsub) unsub(); unsub = store.subscribe(aplicarDoc, aplicarMerc);
+  if (sb && !userNome) pedirNome();
 }
 let escondidoEm = 0;
 document.addEventListener('visibilitychange', () => {
@@ -302,39 +306,72 @@ async function init(){
   store = supabaseStore();
   sb.auth.onAuthStateChange((ev, session) => {
     if (ev==='PASSWORD_RECOVERY') { setTimeout(telaNovaSenha, 0); return; }
-    if (session && session.user){ userEmail = session.user.email; if (started !== session.user.id){ started = session.user.id; userId = session.user.id; setTimeout(startData, 0); } }
+    if (session && session.user){ userEmail = session.user.email; userNome = (session.user.user_metadata||{}).nome || '';
+      if (LINK_TIPO==='invite' && !linkTratado){ linkTratado = true; setTimeout(()=>telaNovaSenha(true), 0); return; }
+      if (started !== session.user.id){ started = session.user.id; userId = session.user.id; setTimeout(startData, 0); } }
     else if (ev==='SIGNED_OUT' || ev==='INITIAL_SESSION'){ started=null; userId=null; if (unsub){unsub();unsub=null;} setTimeout(telaLogin, 0); }
   });
 }
 
+/* ---------- Atualização sob demanda ---------- */
+async function dispararAtualizacao(motivo){
+  if (!sb){ toast('Atualização indisponível no modo de teste'); return; }
+  if (atualizando && Date.now()-atualizando.desde < 240000){ if(!motivo) toast('Já está atualizando…'); return; }
+  atualizando = {desde: Date.now()}; scheduleRender();
+  toast(motivo ? `Buscando cotação e proventos de ${motivo}… (cerca de 1 minuto)` : 'Atualizando cotações e proventos… leva cerca de 1 minuto');
+  try {
+    const {data, error} = await sb.functions.invoke('atualizar', {body:{}});
+    if (error || !data || !data.ok){ throw new Error((data&&data.erro) || (error&&error.message) || 'falha'); }
+    if (data.jaEmAndamento) atualizando = {desde: Date.parse(data.desde)||Date.now()};
+  } catch(e){ console.error(e); atualizando=null; scheduleRender(); toast('Não consegui iniciar a atualização: '+e.message); return; }
+  setTimeout(()=>{ if (atualizando){ atualizando=null; scheduleRender(); toast('A atualização está demorando. Os dados aparecem assim que terminar.'); } }, 240000);
+}
+
 /* ---------- Login ---------- */
-function telaLogin(msg){
+function telaLogin(msg, modo){
+  modo = modo || 'entrar'; const criar = modo==='criar';
   document.body.classList.add('deslogado');
-  $('#main').innerHTML = `<div class="login card"><div class="brand" style="padding:0 0 6px"><i></i>Meu Dinheiro</div><div class="hint" style="margin-bottom:16px">Suas finanças e investimentos no celular e no computador.</div>
+  $('#main').innerHTML = `<div class="login card"><div class="brand" style="padding:0 0 6px"><i></i>Meu Dinheiro</div><div class="hint" style="margin-bottom:16px">${criar?'Crie sua conta':'Suas finanças e investimentos no celular e no computador.'}</div>
     ${msg?`<div class="banner" style="margin-bottom:12px">${esc(msg)}</div>`:''}
     <form class="frm" id="flogin" style="grid-template-columns:1fr">
+      ${criar?'<label>Seu nome<input name="nome" autocomplete="given-name" required placeholder="Como quer ser chamado"></label>':''}
       <label>E-mail<input name="email" type="email" autocomplete="email" required></label>
-      <label>Senha<input name="senha" type="password" autocomplete="current-password" required minlength="6"></label>
-      <button class="btn pri" type="submit" style="padding:11px">Entrar</button>
+      <label>Senha<input name="senha" type="password" autocomplete="${criar?'new-password':'current-password'}" required minlength="6"></label>
+      <button class="btn pri" type="submit" style="padding:11px">${criar?'Criar conta':'Entrar'}</button>
     </form>
-    <div class="row" style="justify-content:space-between;margin-top:12px"><button class="btn ghost sm" id="bCriar">Criar conta</button><button class="btn ghost sm" id="bEsqueci">Esqueci a senha</button></div></div>`;
+    <div class="row" style="justify-content:space-between;margin-top:12px">${criar?'<button class="btn ghost sm" id="bVoltar">Já tenho conta</button>':'<button class="btn ghost sm" id="bCriar">Criar conta</button><button class="btn ghost sm" id="bEsqueci">Esqueci a senha</button>'}</div></div>`;
   const F = $('#flogin');
-  F.onsubmit = async e => { e.preventDefault(); const b=F.querySelector('button'); b.disabled=true; b.textContent='Entrando…';
+  F.onsubmit = async e => { e.preventDefault(); const b=F.querySelector('button'); b.disabled=true;
+    if (criar){
+      b.textContent='Criando…';
+      const {data, error} = await sb.auth.signUp({email:F.email.value.trim(), password:F.senha.value, options:{data:{nome:F.nome.value.trim()}, emailRedirectTo: location.origin+location.pathname}});
+      if (error){ b.disabled=false; b.textContent='Criar conta'; return toast(/not allowed|disabled/i.test(error.message)?'Cadastro fechado. Peça um convite ao administrador.':error.message); }
+      if (!data.session) telaLogin('Conta criada. Abra o link de confirmação que enviamos para o seu e-mail e depois entre aqui.');
+      return;
+    }
+    b.textContent='Entrando…';
     const {error} = await sb.auth.signInWithPassword({email:F.email.value.trim(), password:F.senha.value});
     if (error){ b.disabled=false; b.textContent='Entrar'; telaLoginErro(/Invalid login/i.test(error.message)?'E-mail ou senha incorretos.': /confirm/i.test(error.message)?'Confirme seu e-mail pelo link que enviamos antes de entrar.' : error.message); } };
-  $('#bCriar').onclick = async () => { if (!F.email.value || F.senha.value.length<6){ toast('Preencha e-mail e uma senha com 6+ caracteres'); return; }
-    const {data, error} = await sb.auth.signUp({email:F.email.value.trim(), password:F.senha.value, options:{emailRedirectTo: location.origin+location.pathname}});
-    if (error) return telaLoginErro(error.message);
-    if (!data.session) telaLogin('Conta criada. Abra o link de confirmação que enviamos para o seu e-mail e depois entre aqui.'); };
-  $('#bEsqueci').onclick = async () => { if (!F.email.value){ toast('Digite seu e-mail primeiro'); return; }
+  if ($('#bCriar')) $('#bCriar').onclick = () => { const em=F.email.value; telaLogin('', 'criar'); $('#flogin').email.value=em; };
+  if ($('#bVoltar')) $('#bVoltar').onclick = () => telaLogin();
+  if ($('#bEsqueci')) $('#bEsqueci').onclick = async () => { if (!F.email.value){ toast('Digite seu e-mail primeiro'); return; }
     const {error} = await sb.auth.resetPasswordForEmail(F.email.value.trim(), {redirectTo: location.origin+location.pathname});
     telaLogin(error? error.message : 'Enviamos um link para redefinir a senha no seu e-mail.'); };
 }
 function telaLoginErro(m){ const em=$('#flogin')?.email.value; telaLogin(m); if(em) $('#flogin').email.value=em; }
-function telaNovaSenha(){
+function telaNovaSenha(convite){
   document.body.classList.add('deslogado');
-  $('#main').innerHTML = `<div class="login card"><h2 style="margin:0 0 12px">Nova senha</h2><form class="frm" id="fns" style="grid-template-columns:1fr"><label>Nova senha<input name="s" type="password" minlength="6" required autocomplete="new-password"></label><button class="btn pri" type="submit">Salvar</button></form></div>`;
-  $('#fns').onsubmit = async e => { e.preventDefault(); const {error}=await sb.auth.updateUser({password:$('#fns').s.value}); if(error) toast(error.message); else { toast('Senha alterada'); started=null; const {data:{session}}=await sb.auth.getSession(); if(session){ started=session.user.id; userId=session.user.id; startData(); } } };
+  $('#main').innerHTML = `<div class="login card"><h2 style="margin:0 0 6px">${convite?'Bem-vindo(a)!':'Nova senha'}</h2>${convite?'<div class="hint" style="margin-bottom:12px">Defina seu nome e uma senha para acessar.</div>':''}<form class="frm" id="fns" style="grid-template-columns:1fr">${convite?`<label>Seu nome<input name="nome" required value="${esc(userNome)}"></label>`:''}<label>${convite?'Senha':'Nova senha'}<input name="s" type="password" minlength="6" required autocomplete="new-password"></label><button class="btn pri" type="submit">Salvar</button></form></div>`;
+  $('#fns').onsubmit = async e => { e.preventDefault(); const F=$('#fns'); const upd={password:F.s.value}; if (F.nome) upd.data={nome:F.nome.value.trim()};
+    const {data, error}=await sb.auth.updateUser(upd); if(error) return toast(error.message);
+    if (F.nome) userNome = F.nome.value.trim();
+    toast('Senha salva'); try{ history.replaceState(null,'',location.pathname+'#inicio'); }catch(e){}
+    const {data:{session}}=await sb.auth.getSession(); if(session){ started=session.user.id; userId=session.user.id; startData(); } };
+}
+function pedirNome(){
+  modal(`<h2>Como quer ser chamado?</h2><form class="frm" id="fnome" style="grid-template-columns:1fr"><label>Seu nome<input name="nome" required></label></form><div class="mfoot"><div class="sp"></div><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
+    $('#ok',m).onclick = async () => { const n=$('#fnome',m).nome.value.trim(); if(!n) return; const {error}=await sb.auth.updateUser({data:{nome:n}}); if(error) return toast(error.message); userNome=n; close(); render(); };
+  });
 }
 async function sair(){ await sb.auth.signOut(); }
 
@@ -532,7 +569,7 @@ const ACTS = {
   conferirTodos: async ()=>{ for (const t of txAtivas().filter(t=>t.conferir)) await patch('transacoes', t.id, {conferir:false}); toast('Tudo conferido'); },
   editCat: id=>abrirCategoria(id), novaCat: ()=>abrirCategoria(),
   editProv: id=>abrirProvento(id), novoProv: ()=>abrirProvento(), precoManual: id=>abrirPreco(id),
-  salvarCfg: salvarCfg, sair: ()=>sair(), importar: abrirImport, backup: copiarBackup, restaurar: abrirRestaurar,
+  salvarCfg: salvarCfg, sair: ()=>sair(), mudarNome: ()=>pedirNome(), atualizarMercado: ()=>dispararAtualizacao(), importar: abrirImport, backup: copiarBackup, restaurar: abrirRestaurar,
   goContas: ()=>go('contas'), goCarteira: ()=>go('carteira'), goTx: ()=>go('transacoes'),
   togglePago: async id=>{ const t=D.transacoes[id]; await patch('transacoes', id, {pago:!t.pago}); }
 };
@@ -551,7 +588,7 @@ function vInicio(){
   const ultimos = txAtivas().filter(t=>monthOf(t.data)===ui.mes).sort((a,b)=>(b.data+(b.criadoEm||'')).localeCompare(a.data+(a.criadoEm||''))).slice(0,6);
   const vazio = !contas.length && !list('ativos').length;
   return `
-  <header class="top"><h1>Olá, Matheus</h1><div class="sp"></div>${monthNav()}<button class="btn pri hide-m" data-act="novaTx">+ Lançamento</button></header>
+  <header class="top"><h1>Olá${userNome?', '+esc(userNome.split(' ')[0]):''}</h1><div class="sp"></div>${monthNav()}<button class="btn pri hide-m" data-act="novaTx">+ Lançamento</button></header>
   ${vazio? `<div class="card" style="margin-bottom:14px"><h3>Primeiros passos</h3><div class="hint" style="margin-bottom:10px">Cadastre suas contas e cartões, depois os ativos com as compras. Se tiver o arquivo exportado do Mobills, dá para importar em Ajustes.</div><div class="row" style="flex-wrap:wrap"><button class="btn pri" data-act="novaConta">Cadastrar conta</button><button class="btn" data-act="novoCartao">Cadastrar cartão</button><button class="btn" data-act="novaOp">Lançar compra de ativo</button><button class="btn" data-act="importar">Importar do Mobills</button></div></div>`:''}
   ${pend.length? `<div class="banner"><span>${pend.length} provento${pend.length>1?'s':''} lançado${pend.length>1?'s':''} automaticamente para conferir</span><div class="sp"></div><button class="btn sm" data-act="goTx">Ver</button></div>`:''}
   <div class="grid g4">
@@ -690,12 +727,12 @@ function vCarteira(){
     body = cart.ativos.length? `<div class="grid g2"><div class="chartbox" style="height:260px"><canvas id="chAloc"></canvas></div><div>${Object.entries(alocacao(cart)).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--line)"><span class="dot" style="background:${CLASS_COR[k]}"></span><span style="flex:1">${CLASSES[k]}</span><span class="num">${money(v)}</span><span class="num muted" style="width:60px">${fmtN(v/cart.total*100,1)}%</span></div>`).join('')}</div></div>` : '<div class="empty">Sem ativos</div>';
   }
   return `
-  <header class="top"><h1>Investimentos</h1><div class="sp"></div><button class="btn hide-m" data-act="novoAtivo">+ Ativo</button><button class="btn pri hide-m" data-act="novaOp">+ Compra / venda</button></header>
+  <header class="top"><h1>Investimentos</h1><div class="sp"></div><button class="btn" data-act="atualizarMercado" ${atualizando?'disabled':''}>${atualizando?'Atualizando…':'↻ Atualizar cotações'}</button><button class="btn hide-m" data-act="novoAtivo">+ Ativo</button><button class="btn pri hide-m" data-act="novaOp">+ Compra / venda</button></header>
   <div class="grid g4">
     <div class="card kpi"><div class="lbl">Patrimônio investido</div><div class="val">${money(cart.total)}</div><div class="sub">Custo ${money(cart.custo)}</div></div>
     <div class="card kpi"><div class="lbl">Resultado</div><div class="val ${cart.resultado>=0?'pos':'neg'}">${money(cart.resultado)}</div><div class="sub ${cart.resultado>=0?'pos':'neg'}">${pct(cart.custo?cart.resultado/cart.custo:0)}</div></div>
     <div class="card kpi"><div class="lbl">Proventos 12 meses</div><div class="val">${money(rec12)}</div><div class="sub">média ${money(rec12/12)}/mês</div></div>
-    <div class="card kpi"><div class="lbl">A receber</div><div class="val">${money(aRec)}</div><div class="sub">${upd? 'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Aguardando 1ª atualização'} · US$ ${fmtN(c.usdbrl,2)}</div></div>
+    <div class="card kpi"><div class="lbl">A receber</div><div class="val">${money(aRec)}</div><div class="sub">${atualizando? 'Buscando cotações e proventos…' : upd? 'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Aguardando 1ª atualização'} · US$ ${fmtN(c.usdbrl,2)}</div></div>
   </div>
   <div class="row mt" style="justify-content:space-between;flex-wrap:wrap"><div class="tabs">${[['ativos','Ativos'],['alocacao','Alocação'],['proventos','Proventos'],['operacoes','Operações']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>${tab==='proventos'?'<button class="btn sm" data-act="novoProv">+ Provento manual</button>':''}</div>
   <div class="card mt">${body}</div>`;
@@ -724,7 +761,7 @@ function vAjustes(){
       <label>IR retido sobre dividendos no exterior (%)<input id="cExt" inputmode="decimal" value="${fmtN(c.irExterior*100,1)}"></label>
       <div class="full hint">A cotação do dólar é atualizada automaticamente com as cotações. Proventos com pagamento antes da data acima não viram lançamento, para não duplicar o que você já lançou à mão.</div>
       <div class="full"><button class="btn pri" data-act="salvarCfg">Salvar</button></div></div>
-      <h3 class="mt">Conta</h3><div class="row"><span style="flex:1">${esc(userEmail)}</span><button class="btn sm" data-act="sair">Sair</button></div>
+      <h3 class="mt">Conta</h3><div class="row" style="flex-wrap:wrap"><span style="flex:1">${esc(userNome||'')} · ${esc(userEmail)}</span><button class="btn sm" data-act="mudarNome">Mudar nome</button><button class="btn sm" data-act="sair">Sair</button></div>
       <h3 class="mt">Atualização automática</h3><div class="hint">Última execução: ${c.ultimaAtualizacao? new Date(c.ultimaAtualizacao).toLocaleString('pt-BR'):'ainda não rodou'}${c.ultimaAtualizacaoObs?' · '+esc(c.ultimaAtualizacaoObs):''}</div>`;
   } else if (tab==='dados'){
     body = `<h3>Importar do Mobills</h3><div class="hint" style="margin-bottom:10px">No Mobills, exporte as transações em CSV ou Excel salvo como CSV. Aqui você escolhe qual coluna é a data, a descrição, o valor, a categoria e a conta. Contas e categorias que não existirem são criadas.</div><button class="btn pri" data-act="importar">Importar arquivo CSV</button>
@@ -932,7 +969,9 @@ function abrirAtivo(id, prefill){
     F.classe.onchange=()=>{ if(['etf_ext','stock_ext'].includes(F.classe.value)) F.moeda.value='USD'; else F.moeda.value='BRL'; };
     if (!id) F.ticker.oninput = () => { const t=F.ticker.value.toUpperCase().trim(); if(/11$/.test(t) && F.classe.value==='acao') F.classe.value='fii'; else if(/3[2-5]$/.test(t)) F.classe.value='bdr'; else if(/^(BTC|ETH|SOL|USDT|ADA|XRP|BNB|DOGE)$/.test(t)) F.classe.value='cripto'; };
     $('#ok',m).onclick = async () => { const tk=(F.ticker.value||a.ticker||'').toUpperCase().trim(); if(!tk) return F.ticker.focus();
-      const aid=id||safeId(tk); await put('ativos', aid, {ticker:tk, nome:F.nome.value.trim(), classe:F.classe.value, moeda:F.moeda.value, contaProventosId:F.contaProventosId.value||null}); close(); toast('Ativo salvo'); scheduleSync(); };
+      const aid=id||safeId(tk); const novo = !id && !D.ativos[aid]; const mudouClasse = id && (D.ativos[id].classe!==F.classe.value || D.ativos[id].moeda!==F.moeda.value);
+      await put('ativos', aid, {ticker:tk, nome:F.nome.value.trim(), classe:F.classe.value, moeda:F.moeda.value, contaProventosId:F.contaProventosId.value||null}); close(); toast('Ativo salvo'); scheduleSync();
+      if (novo || mudouClasse || !D.mercado[safeId(tk)]) dispararAtualizacao(tk); };
     if ($('#preco',m)) $('#preco',m).onclick=()=>{ close(); abrirPreco(id); };
     if ($('#del',m)) $('#del',m).onclick = async () => { const n=opsDo(a.ticker).length; if(n){ toast(`Exclua antes as ${n} operações deste ativo.`); return; } if(await confirmar('Excluir ativo?')){ await del('ativos',id); close(); } };
   });
