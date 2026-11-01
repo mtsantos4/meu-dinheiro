@@ -564,7 +564,8 @@ function resumoMes(ym){
   }
   return {rec, desp, saldo: rec-desp, prov, porCat};
 }
-function catTaxas(){ const c=list('categorias').find(c=>c.tipo==='despesa' && /impost|taxa/i.test(c.nome)); return c?c.id:'_'; }
+function catTaxas(){ const c=list('categorias').find(c=>c.tipo==='despesa' && /taxa|tarifa|impost|iof|c[aâ]mbio/i.test(c.nome)); return c?c.id:'taxas'; }
+async function garantirCatTaxas(){ const id=catTaxas(); if (!D.categorias[id]) await put('categorias', id, {nome:'Taxas e tarifas', tipo:'despesa', cor:'#a16207'}); return id; }
 function catProvId(){ const c=list('categorias').find(c=>c.tipo==='receita' && /provent|dividend|rendiment/i.test(c.nome)); return c?c.id:'proventos'; }
 const catNome = id => (D.categorias[id]||{}).nome || 'Sem categoria';
 const catCor = id => (D.categorias[id]||{}).cor || '#94a3b8';
@@ -711,14 +712,15 @@ function vTransacoes(){
     else if (f.de || f.ate){ if ((f.de && t.data<f.de) || (f.ate && t.data>f.ate)) return false; }
     else if (mesComp(t)!==ui.mes) return false;
     if (f.conta){ const [k,id]=f.conta.split(':'); if (k==='a' && t.contaId!==id && t.contaDestinoId!==id) return false; if (k==='c' && t.cartaoId!==id) return false; }
-    if (f.cat && t.categoriaId!==f.cat) return false;
+    if (f.cat && t.categoriaId!==f.cat && !(t.tipo==='transferencia' && +t.taxa>0 && f.cat===catTaxas())) return false;
     if (f.tipo==='conferir'){ if(!t.conferir) return false; } else if (f.tipo && t.tipo!==f.tipo) return false;
     if (q && !((t.descricao||'')+' '+catNome(t.categoriaId)+' '+(t.obs||'')).toLowerCase().includes(q)) return false;
     return true;
   }).sort((a,b)=>{ const o=f.ordem||'desc';
     if (o==='valor') return (+b.valor||0)-(+a.valor||0);
     const c=(a.data+(a.criadoEm||'')).localeCompare(b.data+(b.criadoEm||'')); return o==='asc'? c : -c; });
-  let rec=0, desp=0; txs.forEach(t=>{ if(TIPOS_NAO_RESULTADO.has(t.tipo) || ehInvest(t)) return; const v=+t.valor||0; if(t.tipo==='receita') rec+=v; else if(t.tipo==='despesa') desp+=v; });
+  let rec=0, desp=0; txs.forEach(t=>{ if (t.tipo==='transferencia' && +t.taxa>0 && (!f.conta || f.conta==='a:'+t.contaId)) desp += toBRL(+t.taxa, (D.contas[t.contaId]||{}).moeda||'BRL');
+    if(TIPOS_NAO_RESULTADO.has(t.tipo) || ehInvest(t)) return; const v=+t.valor||0; if(t.tipo==='receita') rec+=v; else if(t.tipo==='despesa') desp+=v; });
   const groups = {}; txs.forEach(t=>(groups[t.data]=groups[t.data]||[]).push(t));
   const pend = txAtivas().filter(t=>t.conferir).length;
   const titulo = ui.faturaVer ? `Fatura ${cartaoNome(f.conta.slice(2))} · ${mesNome(ui.faturaVer)}` : '';
@@ -975,6 +977,7 @@ function abrirTransacao(id){
         <label><span id="lblTaxa">Taxas, spread e IOF</span><input name="taxa" inputmode="decimal" value="${t.taxa?fmtN(+t.taxa,2):'0,00'}"></label>
         <label class="full"><span id="lblRec">Valor recebido</span><input name="valorDestino" inputmode="decimal" value="${t.valorDestino!=null?fmtN(+t.valorDestino,2):''}" style="font-weight:600"></label>
         <div class="full hint" id="fxInfo"></div>
+        <div class="full hint">Use a cotação do dólar antes das taxas. Se o valor que chegou na conta for diferente do calculado, digite o valor real em "Valor recebido". As taxas entram como despesa do mês, na categoria de taxas.</div>
       </div>
     </div>
     <label class="f-fat" style="display:none">Fatura<input name="faturaMes" type="month" value="${t.faturaMes||''}"></label>
@@ -1037,7 +1040,7 @@ function abrirTransacao(id){
       if (st.tipo!=='pagamento_fatura'){ base.contaId = isCard? null : mv.slice(2); base.cartaoId = isCard? mv.slice(2) : null; }
       if (st.tipo==='transferencia'){ base.contaDestinoId=F.contaDestinoId.value; base.categoriaId=null; if(base.contaDestinoId===base.contaId){ toast('Escolha contas diferentes'); return; }
         const mo=(D.contas[base.contaId]||{}).moeda||'BRL', md=(D.contas[base.contaDestinoId]||{}).moeda||'BRL';
-        if (mo!==md){ const vd=parseNum(F.valorDestino.value); if(!vd){ toast('Informe o valor recebido'); return; } base.valorDestino=vd; base.cambio=parseNum(F.cambio.value)||null; base.taxa=parseNum(F.taxa.value)||0; }
+        if (mo!==md){ const vd=parseNum(F.valorDestino.value); if(!vd){ toast('Informe o valor recebido'); return; } base.valorDestino=vd; base.cambio=parseNum(F.cambio.value)||null; base.taxa=parseNum(F.taxa.value)||0; if (base.taxa>0) await garantirCatTaxas(); }
         else { base.valorDestino=null; base.cambio=null; base.taxa=null; }
       } else { base.contaDestinoId=null; base.valorDestino=null; base.cambio=null; base.taxa=null; }
       if (st.tipo!=='transferencia' && st.tipo!=='pagamento_fatura') base.categoriaId = F.categoriaId.value || null;
