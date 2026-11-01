@@ -1,0 +1,35 @@
+{
+  "name": "meu-dinheiro",
+  "productName": "Meu Dinheiro",
+  "version": "1.0.0",
+  "description": "Finanças pessoais e investimentos",
+  "author": "Matheus Teles dos Santos",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "io.github.mtsantos4.meudinheiro",
+    "productName": "Meu Dinheiro",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "offline.html"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Meu Dinheiro",
+      "artifactName": "MeuDinheiro-Instalador-${version}.exe"
+    },
+    "portable": { "artifactName": "MeuDinheiro-Portatil-${version}.exe" }
+  }
+}
