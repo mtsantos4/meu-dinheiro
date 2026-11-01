@@ -481,6 +481,7 @@ function saldoConta(id, {previsto=false, ate=null}={}){
       if (t.tipo==='receita'||t.tipo==='resgate') s+=v;
       else if (t.tipo==='despesa'||t.tipo==='aplicacao'||t.tipo==='pagamento_fatura') s-=v;
       else if (t.tipo==='transferencia') s-=v;
+      else if (t.tipo==='ajuste') s+=(+t.valor||0);
     }
     if (t.tipo==='transferencia' && t.contaDestinoId===id) s += (t.valorDestino!=null? +t.valorDestino : v);
   }
@@ -505,7 +506,7 @@ function limiteUsado(cartaoId){
 // mês em que o lançamento conta: compras e estornos no cartão contam no mês da fatura
 const ehInvest = t => !!(D.categorias[t.categoriaId]||{}).investimento && (t.tipo==='despesa'||t.tipo==='receita') && !t.cartaoId;
 const mesComp = t => (t.cartaoId && t.faturaMes && (t.tipo==='despesa'||t.tipo==='receita')) ? t.faturaMes : monthOf(t.data);
-const TIPOS_NAO_RESULTADO = new Set(['transferencia','pagamento_fatura','aplicacao','resgate']);
+const TIPOS_NAO_RESULTADO = new Set(['transferencia','pagamento_fatura','aplicacao','resgate','ajuste']);
 function resumoMes(ym){
   let rec=0, desp=0, prov=0; const porCat={};
   for (const t of txAtivas()){
@@ -649,6 +650,7 @@ function txRow(t){
   const isCard = !!t.cartaoId; let sinal=-1, cor='var(--neg)', ic='', bg=catCor(t.categoriaId), sub='';
   const moeda = isCard? 'BRL' : ((D.contas[t.contaId]||{}).moeda||'BRL');
   if (t.tipo==='receita'){ sinal=1; cor='var(--pos)'; }
+  if (t.tipo==='ajuste'){ const v=+t.valor||0; return `<div class="tx" data-tx="${t.id}"><div class="ic" style="background:#64748b">±</div><div class="main"><div class="d1">${esc(t.descricao||'Ajuste de saldo')}</div><div class="d2">Ajuste de saldo · ${esc(contaNome(t.contaId))}</div></div><div class="v" style="color:var(--text)">${v>=0?'+':'−'}${money(Math.abs(v), moeda)}</div></div>`; }
   if (t.tipo==='transferencia'){ sinal=0; cor='var(--text)'; bg='#64748b'; ic='⇄'; sub=`${contaNome(t.contaId)} → ${contaNome(t.contaDestinoId)}`+(t.valorDestino!=null?` · recebeu ${money(+t.valorDestino,(D.contas[t.contaDestinoId]||{}).moeda||'BRL')}`:'')+(+t.taxa>0?` · taxas ${money(+t.taxa,(D.contas[t.contaId]||{}).moeda||'BRL')}`:''); }
   else if (t.tipo==='pagamento_fatura'){ sinal=-1; bg='#64748b'; ic='▤'; sub=`Fatura ${cartaoNome(t.cartaoId)} · ${mesCurto(t.faturaMes||'')} · ${contaNome(t.contaId)}`; }
   else if (t.tipo==='aplicacao'||t.tipo==='resgate'){ sinal=t.tipo==='resgate'?1:-1; cor= 'var(--text)'; bg='var(--acc)'; ic=t.tipo==='aplicacao'?'↗':'↙'; sub=`${t.tipo==='aplicacao'?'Aplicação':'Resgate'} · ${contaNome(t.contaId)}`; }
@@ -830,6 +832,7 @@ function bindCor(m, get, set){ m.querySelectorAll('[data-cor]').forEach(b=>b.onc
 function abrirTransacao(id){
   const t = id ? {...D.transacoes[id]} : {tipo:'despesa', data: todayISO(), pago:true, contaId: (list('contas').find(c=>!c.arquivada)||{}).id};
   if (t.origem==='operacao') { const op=list('operacoes').find(o=>'op_'+o.id===id); if (op) return abrirOperacao(op.id); }
+  if (t.tipo==='ajuste') return abrirAjuste(id);
   const contas = list('contas').filter(c=>!c.arquivada || c.id===t.contaId);
   const meio = t.cartaoId ? 'c:'+t.cartaoId : 'a:'+(t.contaId||'');
   const st = {tipo:t.tipo};
@@ -936,6 +939,19 @@ function abrirTransacao(id){
   });
 }
 
+function abrirAjuste(id){
+  const t=D.transacoes[id]; const mo=(D.contas[t.contaId]||{}).moeda||'BRL';
+  modal(`<h2>Ajuste de saldo · ${esc(contaNome(t.contaId))}</h2><form class="frm" id="faj">
+    <label>Valor (negativo para reduzir)<input name="valor" inputmode="decimal" value="${fmtN(+t.valor,2)}"></label>
+    <label>Data<input name="data" type="date" value="${t.data}"></label>
+    <label class="full">Descrição<input name="descricao" value="${esc(t.descricao||'Ajuste de saldo')}"></label>
+    <div class="full hint">Ajustes mudam o saldo da conta, mas não contam como receita nem despesa nos relatórios.</div></form>
+    <div class="mfoot"><button class="btn danger" id="del">Excluir</button><div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`,(m,close)=>{
+    $('#ok',m).onclick=async()=>{ const F=$('#faj',m); await patch('transacoes',id,{valor:parseNum(F.valor.value), data:F.data.value, descricao:F.descricao.value.trim()}); close(); };
+    $('#del',m).onclick=async()=>{ if(await confirmar('Excluir este ajuste?')){ await del('transacoes',id); close(); } };
+  });
+}
+
 /* ---------- Pagamento de fatura ---------- */
 function abrirPagamento(cartaoId, ym){
   const k = D.cartoes[cartaoId]; const f = fatura(cartaoId, ym);
@@ -961,18 +977,19 @@ function abrirConta(id){
     <label>Moeda<select name="moeda"><option value="BRL" ${c.moeda!=='USD'?'selected':''}>Real (R$)</option><option value="USD" ${c.moeda==='USD'?'selected':''}>Dólar (US$)</option></select></label>
     ${id? `<label>Saldo inicial<input name="saldoInicial" inputmode="decimal" value="${fmtN(+c.saldoInicial||0,2)}"></label>
     <label>Saldo de hoje<input name="saldoHoje" inputmode="decimal" value="${fmtN(saldoConta(id),2)}" style="font-weight:600"></label>
-    <div class="full hint">Mude o que for mais fácil, o outro se ajusta sozinho. <b>Saldo inicial</b>: o saldo antes do primeiro lançamento (o mesmo informado no Mobills quando criou a conta). <b>Saldo de hoje</b>: digite o saldo que o banco mostra hoje. Os lançamentos não mudam. Lançamentos até hoje nesta conta somam ${money(saldoConta(id)-(+c.saldoInicial||0), c.moeda)}.</div>`
+    <div class="full hint"><b>Saldo inicial</b>: o saldo antes do primeiro lançamento (o mesmo informado no Mobills quando criou a conta). Mudar aqui recalcula todo o histórico.<br><b>Saldo de hoje</b>: digite o saldo que o banco mostra hoje. O app cria um lançamento "Ajuste de saldo" com a diferença, na data de hoje, que você vê e pode excluir em Transações.<br>Lançamentos até hoje nesta conta somam ${money(saldoConta(id)-(+c.saldoInicial||0), c.moeda)}.</div>`
     : `<label class="full">Saldo inicial<input name="saldoHoje" inputmode="decimal" value="0,00"></label><div class="full hint">O saldo da conta antes do primeiro lançamento que você vai registrar ou importar. Se for importar o histórico do Mobills, use o saldo inicial que a conta tinha lá. Depois, dá para conferir e ajustar pelo saldo de hoje.</div>`}
     <div class="full"><div class="hint" style="margin-bottom:6px">Cor</div>${corPicker(cor)}</div>
     ${id?`<label class="chk full"><input type="checkbox" name="arquivada" ${c.arquivada?'checked':''}> Ocultar conta (não uso mais; some das listas e mantém o histórico)</label>`:''}
   </form><div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
     bindCor(m,()=>cor,v=>cor=v);
     const movAteHoje = id ? saldoConta(id) - (+c.saldoInicial||0) : 0; const FF=$('#fc',m);
-    if (FF.saldoInicial){ FF.saldoInicial.addEventListener('input',()=>{ FF.saldoHoje.value=fmtN(parseNum(FF.saldoInicial.value)+movAteHoje,2); }); FF.saldoHoje.addEventListener('input',()=>{ FF.saldoInicial.value=fmtN(parseNum(FF.saldoHoje.value)-movAteHoje,2); }); }
+    let editou = null;
+    if (FF.saldoInicial){ FF.saldoInicial.addEventListener('input',()=>{ editou='inicial'; FF.saldoHoje.value=fmtN(parseNum(FF.saldoInicial.value)+movAteHoje,2); }); FF.saldoHoje.addEventListener('input',()=>{ editou='hoje'; FF.saldoInicial.value=fmtN(+c.saldoInicial||0,2); }); }
     $('#ok',m).onclick = async () => { const F=$('#fc',m); if(!F.nome.value.trim()) return F.nome.focus();
-      const hoje = parseNum(F.saldoHoje.value);
-      const movimentos = id ? saldoConta(id) - (+c.saldoInicial||0) : 0;   // efeito dos lançamentos até hoje
-      const d={nome:F.nome.value.trim(), tipo:F.tipo.value, moeda:F.moeda.value, saldoInicial: Math.round((hoje - movimentos)*100)/100, cor, arquivada: F.arquivada? F.arquivada.checked:false};
+      const d={nome:F.nome.value.trim(), tipo:F.tipo.value, moeda:F.moeda.value, saldoInicial: id ? (editou==='inicial' ? parseNum(F.saldoInicial.value) : (+c.saldoInicial||0)) : parseNum(F.saldoHoje.value), cor, arquivada: F.arquivada? F.arquivada.checked:false};
+      if (id && editou==='hoje'){ const dif = Math.round((parseNum(F.saldoHoje.value) - saldoConta(id))*100)/100;
+        if (Math.abs(dif)>=0.005) await put('transacoes', newId(), {tipo:'ajuste', valor:dif, data:todayISO(), contaId:id, descricao:'Ajuste de saldo', pago:true, origem:'manual', criadoEm:new Date().toISOString()}); }
       await put('contas', id||newId('contas'), d); close(); toast('Conta salva'); };
     if ($('#del',m)) $('#del',m).onclick = async () => { const n=txAtivas().filter(t=>t.contaId===id||t.contaDestinoId===id).length; if(n){ toast(`Esta conta tem ${n} lançamentos. Arquive em vez de excluir.`); return; } if(await confirmar('Excluir esta conta?')){ await del('contas',id); close(); } };
   });
