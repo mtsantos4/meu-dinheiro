@@ -503,6 +503,7 @@ function limiteUsado(cartaoId){
   let u=0; meses.forEach(m=>{ const f=fatura(cartaoId,m); u+=Math.max(0,f.total-f.pago); }); return u;
 }
 // mês em que o lançamento conta: compras e estornos no cartão contam no mês da fatura
+const ehInvest = t => !!(D.categorias[t.categoriaId]||{}).investimento && (t.tipo==='despesa'||t.tipo==='receita') && !t.cartaoId;
 const mesComp = t => (t.cartaoId && t.faturaMes && (t.tipo==='despesa'||t.tipo==='receita')) ? t.faturaMes : monthOf(t.data);
 const TIPOS_NAO_RESULTADO = new Set(['transferencia','pagamento_fatura','aplicacao','resgate']);
 function resumoMes(ym){
@@ -510,7 +511,7 @@ function resumoMes(ym){
   for (const t of txAtivas()){
     if (mesComp(t)!==ym) continue;
     if (t.tipo==='transferencia' && +t.taxa>0){ const vt=toBRL(+t.taxa, (D.contas[t.contaId]||{}).moeda||'BRL'); const ct=catTaxas(); desp+=vt; porCat[ct]=(porCat[ct]||0)+vt; continue; }
-    if (TIPOS_NAO_RESULTADO.has(t.tipo)) continue;
+    if (TIPOS_NAO_RESULTADO.has(t.tipo) || ehInvest(t)) continue;
     const moeda = t.cartaoId? 'BRL' : ((D.contas[t.contaId]||{}).moeda||'BRL');
     const v = toBRL(+t.valor||0, moeda);
     if (t.tipo==='receita' && t.cartaoId){ desp-=v; porCat[t.categoriaId||'_']=(porCat[t.categoriaId||'_']||0)-v; continue; }
@@ -646,6 +647,7 @@ function txRow(t){
   if (t.tipo==='transferencia'){ sinal=0; cor='var(--text)'; bg='#64748b'; ic='⇄'; sub=`${contaNome(t.contaId)} → ${contaNome(t.contaDestinoId)}`+(t.valorDestino!=null?` · recebeu ${money(+t.valorDestino,(D.contas[t.contaDestinoId]||{}).moeda||'BRL')}`:'')+(+t.taxa>0?` · taxas ${money(+t.taxa,(D.contas[t.contaId]||{}).moeda||'BRL')}`:''); }
   else if (t.tipo==='pagamento_fatura'){ sinal=-1; bg='#64748b'; ic='▤'; sub=`Fatura ${cartaoNome(t.cartaoId)} · ${mesCurto(t.faturaMes||'')} · ${contaNome(t.contaId)}`; }
   else if (t.tipo==='aplicacao'||t.tipo==='resgate'){ sinal=t.tipo==='resgate'?1:-1; cor= 'var(--text)'; bg='var(--acc)'; ic=t.tipo==='aplicacao'?'↗':'↙'; sub=`${t.tipo==='aplicacao'?'Aplicação':'Resgate'} · ${contaNome(t.contaId)}`; }
+  else if (ehInvest(t)){ sinal=t.tipo==='receita'?1:-1; cor='var(--text)'; bg='var(--acc)'; ic=t.tipo==='receita'?'↙':'↗'; sub=`${catNome(t.categoriaId)} · ${t.tipo==='receita'?'resgate':'aplicação'} · ${contaNome(t.contaId)}`; }
   else sub = `${catNome(t.categoriaId)} · ${isCard? '💳 '+cartaoNome(t.cartaoId)+(t.faturaMes?' ('+mesCurto(t.faturaMes)+')':'') : contaNome(t.contaId)}`;
   if (!ic) ic = esc((catNome(t.categoriaId)||'?').slice(0,1).toUpperCase());
   if (isCard && t.faturaMes && monthOf(t.data)!==t.faturaMes) sub += ` · compra em ${fmtData(t.data)}`;
@@ -663,7 +665,7 @@ function vTransacoes(){
     if (q && !((t.descricao||'')+' '+catNome(t.categoriaId)+' '+(t.obs||'')).toLowerCase().includes(q)) return false;
     return true;
   }).sort((a,b)=>(b.data+(b.criadoEm||'')).localeCompare(a.data+(a.criadoEm||'')));
-  let rec=0, desp=0; txs.forEach(t=>{ if(TIPOS_NAO_RESULTADO.has(t.tipo)) return; const v=+t.valor||0; if(t.tipo==='receita') rec+=v; else if(t.tipo==='despesa') desp+=v; });
+  let rec=0, desp=0; txs.forEach(t=>{ if(TIPOS_NAO_RESULTADO.has(t.tipo) || ehInvest(t)) return; const v=+t.valor||0; if(t.tipo==='receita') rec+=v; else if(t.tipo==='despesa') desp+=v; });
   const groups = {}; txs.forEach(t=>(groups[t.data]=groups[t.data]||[]).push(t));
   const pend = txAtivas().filter(t=>t.conferir).length;
   const titulo = ui.faturaVer ? `Fatura ${cartaoNome(f.conta.slice(2))} · ${mesNome(ui.faturaVer)}` : '';
@@ -769,7 +771,7 @@ function vAjustes(){
   const c = cfg(); const tab=ui.cfgTab; let body='';
   if (tab==='categorias'){
     const cats=list('categorias').sort((a,b)=>a.nome.localeCompare(b.nome));
-    body = ['despesa','receita'].map(tp=>`<h3 style="margin-top:6px">${tp==='despesa'?'Despesas':'Receitas'}</h3>${cats.filter(x=>x.tipo===tp).map(x=>`<div class="acct" style="cursor:pointer;padding:8px 4px" data-act="editCat" data-id="${x.id}"><span class="dot" style="background:${x.cor}"></span><span style="flex:1">${esc(x.nome)}</span><span class="hint">${txAtivas().filter(t=>t.categoriaId===x.id).length} lançamentos</span></div>`).join('')||'<div class="hint">Nenhuma</div>'}`).join('') + `<button class="btn mt" data-act="novaCat">+ Categoria</button>`;
+    body = ['despesa','receita'].map(tp=>`<h3 style="margin-top:6px">${tp==='despesa'?'Despesas':'Receitas'}</h3>${cats.filter(x=>x.tipo===tp).map(x=>`<div class="acct" style="cursor:pointer;padding:8px 4px" data-act="editCat" data-id="${x.id}"><span class="dot" style="background:${x.cor}"></span><span style="flex:1">${esc(x.nome)}${x.investimento?' <span class="pill acc">investimento</span>':''}</span><span class="hint">${txAtivas().filter(t=>t.categoriaId===x.id).length} lançamentos</span></div>`).join('')||'<div class="hint">Nenhuma</div>'}`).join('') + `<button class="btn mt" data-act="novaCat">+ Categoria</button>`;
   } else if (tab==='geral'){
     body = `<div class="frm" style="max-width:560px">
       <label>Cotação do dólar (R$)<input id="cUsd" inputmode="decimal" value="${fmtN(c.usdbrl,4)}" ${c.usdAuto?'disabled title="Atualizado automaticamente"':''}></label>
@@ -991,10 +993,11 @@ function abrirCategoria(id){
   modal(`<h2>${id?'Editar categoria':'Nova categoria'}</h2><form class="frm" id="fg">
     <label class="full">Nome<input name="nome" value="${esc(c.nome||'')}"></label>
     <label class="full">Tipo<select name="tipo"><option value="despesa" ${c.tipo==='despesa'?'selected':''}>Despesa</option><option value="receita" ${c.tipo==='receita'?'selected':''}>Receita</option></select></label>
+    <label class="chk full"><input type="checkbox" name="investimento" ${c.investimento?'checked':''}> É investimento (aplicação ou resgate): mexe no saldo da conta, mas não conta como despesa nem receita do mês</label>
     <div class="full">${corPicker(cor)}</div></form>
     <div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
     bindCor(m,()=>cor,v=>cor=v);
-    $('#ok',m).onclick = async () => { const F=$('#fg',m); if(!F.nome.value.trim()) return; await put('categorias', id||newId('categorias'), {nome:F.nome.value.trim(), tipo:F.tipo.value, cor}); close(); };
+    $('#ok',m).onclick = async () => { const F=$('#fg',m); if(!F.nome.value.trim()) return; await put('categorias', id||newId('categorias'), {nome:F.nome.value.trim(), tipo:F.tipo.value, cor, investimento:F.investimento.checked}); close(); };
     if ($('#del',m)) $('#del',m).onclick = async () => { const n=txAtivas().filter(t=>t.categoriaId===id).length; if(n){ toast(`Categoria usada em ${n} lançamentos.`); return; } if(await confirmar('Excluir categoria?')){ await del('categorias',id); close(); } };
   });
 }
@@ -1199,7 +1202,7 @@ function abrirImport(){
       const destino=$('#destino',m).value, modoCartao = destino!=='contas';
       const btn=$('#ok',m); btn.disabled=true; btn.textContent='Importando…';
       const findBy = (col, nome) => list(col).find(x=>x.nome.toLowerCase().trim()===nome.toLowerCase().trim());
-      const catDe = async (nm, tipo) => { if(!nm) return null; let c=list('categorias').find(x=>x.nome.toLowerCase()===nm.toLowerCase()&&x.tipo===tipo); if(!c){ const cid=newId(); await put('categorias',cid,{nome:nm,tipo,cor:PALETTE[list('categorias').length%PALETTE.length]}); c=D.categorias[cid]; } return c.id; };
+      const catDe = async (nm, tipo) => { if(!nm) return null; let c=list('categorias').find(x=>x.nome.toLowerCase()===nm.toLowerCase()&&x.tipo===tipo); if(!c){ const cid=newId(); await put('categorias',cid,{nome:nm,tipo,cor:PALETTE[list('categorias').length%PALETTE.length], investimento:/invest|aplica[çc]|resgate|corretora|\bb3\b/i.test(nm)}); c=D.categorias[cid]; } return c.id; };
       let ok=0, skip=0, ign=0, transf=0, pgtos=0; const lote=uid(); const out=[]; const agora=new Date().toISOString(); const hoje=todayISO();
       const linhas=[];
       for (let i=1;i<rows.length;i++){
