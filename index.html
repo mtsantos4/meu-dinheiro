@@ -1431,7 +1431,6 @@ function abrirRestaurar(){
 // trava o zoom por gesto de pinça (Safari ignora user-scalable em alguns casos)
 ['gesturestart','gesturechange','gestureend'].forEach(ev=>document.addEventListener(ev, e=>e.preventDefault(), {passive:false}));
 document.addEventListener('touchmove', e=>{ if (e.scale && e.scale!==1) e.preventDefault(); }, {passive:false});
-let ultimoToque=0; document.addEventListener('touchend', e=>{ const ag=Date.now(); if (ag-ultimoToque<300 && !e.target.closest('input,select,textarea')) e.preventDefault(); ultimoToque=ag; }, {passive:false});
 init();
 </script>
 </body>
