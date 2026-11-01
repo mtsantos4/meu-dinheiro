@@ -16,6 +16,7 @@ UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like 
 HOJE = dt.date.today()
 JANELA_DIAS = 400
 LOG = []
+USD = [None]
 
 def log(msg):
     LOG.append(msg); print(msg, flush=True)
@@ -187,7 +188,12 @@ def b3_proventos(ticker, classe):
     for b in blocos:
         if isinstance(b, dict):
             lst += b.get("cashDividends") or []
-    sufixo = {"3": "ACNOR", "4": "ACNPR", "5": "ACNPA", "6": "ACNPB", "11": ""}.get(ticker[4:], "")
+    if classe in ("fii", "etf"):
+        sufixo = "CTF"
+    elif classe == "bdr":
+        sufixo = "BDR"
+    else:
+        sufixo = {"3": "ACNOR", "4": "ACNPR", "5": "ACNPA", "6": "ACNPB", "11": "UNT"}.get(ticker[4:], "")
     if sufixo and any(sufixo in (x.get("isinCode") or "") for x in lst):
         lst = [x for x in lst if sufixo in (x.get("isinCode") or "")]
     out = []
@@ -258,8 +264,16 @@ def processar(a, agora):
     t, classe, moeda = a["ticker"], a["classe"], a["moeda"]
     mercado, provs, fonte_prov, avisos = None, [], None, []
     try:
-        r = yahoo_chart(yahoo_symbol(t, classe, moeda))
-        preco, var, cur = yahoo_preco(r)
+        try:
+            r = yahoo_chart(yahoo_symbol(t, classe, moeda))
+            preco, var, cur = yahoo_preco(r)
+        except Exception:
+            if classe != "cripto":
+                raise
+            r = yahoo_chart(f"{t}-USD", "5d")
+            preco, var, cur = yahoo_preco(r)
+            if USD[0]:
+                preco, cur = preco * USD[0], "BRL"
         mercado = {"ticker": t, "preco": round(preco, 6), "moeda": "USD" if cur == "USD" else "BRL", "variacao": var, "atualizadoEm": agora, "fonte": "Yahoo Finance"}
     except Exception as e:
         r = None; avisos.append(f"cotação: {e}")
@@ -271,17 +285,23 @@ def processar(a, agora):
         except Exception as e:
             avisos.append(str(e))
         if not provs and r is not None:
-            provs, fonte_prov = yahoo_dividendos(r, "USD"), "Yahoo (sem data de pagamento)"
+            provs, fonte_prov = yahoo_dividendos(r, "USD"), "Yahoo (pagamento estimado)"
+            for p in provs:  # EUA: pagamento costuma sair poucos dias após a data-ex; estimamos +7 dias corridos
+                ex = dt.date.fromisoformat(p["dataCom"]) + dt.timedelta(days=1)
+                while ex.weekday() >= 5:
+                    ex += dt.timedelta(days=1)
+                p["dataPagamento"] = (ex + dt.timedelta(days=7)).isoformat()
+                p["estimado"] = True
     else:
         try:
-            provs, fonte_prov = statusinvest(t, classe), "Status Invest"
+            provs, fonte_prov = b3_proventos(t, classe), "B3"
         except Exception as e:
-            avisos.append(str(e))
-        if not provs:
+            avisos.append(f"B3: {e}")
+        if not provs and classe != "etf":
             try:
-                provs, fonte_prov = b3_proventos(t, classe), "B3"
+                provs, fonte_prov = statusinvest(t, classe), "Status Invest"
             except Exception as e:
-                avisos.append(f"B3: {e}")
+                avisos.append(str(e))
         if not provs and r is not None:
             provs, fonte_prov = yahoo_dividendos(r, "BRL"), "Yahoo (sem data de pagamento)"
     return mercado, provs, fonte_prov, avisos
@@ -306,6 +326,7 @@ def main():
     linhas, ok, erros, n_prov = [], 0, [], 0
     try:
         usd, fonte_usd = dolar()
+        USD[0] = usd
         log(f"Dólar: {usd} ({fonte_usd})")
     except Exception as e:
         usd = None; erros.append(f"dólar: {e}"); log(f"Dólar falhou: {e}")
@@ -320,16 +341,16 @@ def main():
             tipo = tipo_padrao(p["tipoTxt"], a["classe"])
             pid = safe_id(f"{a['ticker']}_{p['dataCom']}_{tipo}")
             if pid in vistos:  # dois proventos do mesmo tipo na mesma data-com
-                pid = safe_id(f"{pid}_{p['dataPagamento'] or p['valor']}")
+                pid = safe_id(f"{pid}_{int(round(p['valor'] * 1e6))}")
                 if pid in vistos:
                     continue
             vistos.add(pid)
             linhas.append({"col": "proventos", "id": pid, "data": {
                 "ticker": a["ticker"], "tipo": tipo, "dataCom": p["dataCom"], "dataPagamento": p["dataPagamento"],
-                "valor": p["valor"], "moeda": p["moeda"], "fonte": fonte_prov, "atualizadoEm": agora}})
+                "valor": p["valor"], "moeda": p["moeda"], "fonte": fonte_prov, "pagamentoEstimado": bool(p.get("estimado")), "atualizadoEm": agora}})
             n_prov += 1
         recentes = sorted(provs, key=lambda x: x["dataCom"], reverse=True)[:3]
-        resumo = "; ".join(f"{p['dataCom']}→{p['dataPagamento'] or '?'} {p['valor']}" for p in recentes)
+        resumo = "; ".join(f"{p['dataCom']}→{p['dataPagamento'] or '?'} {p['valor']} {tipo_padrao(p['tipoTxt'], a['classe'])}" for p in recentes)
         log(f"{a['ticker']:<8} preço={mercado['preco'] if mercado else '—':<10} proventos={len(provs):<3} fonte={fonte_prov or '—'}  {resumo}" + (f"  AVISOS: {' | '.join(avisos)}" if avisos else ""))
         if not mercado:
             erros.append(a["ticker"])
