@@ -193,7 +193,7 @@ def b3_proventos(ticker, classe):
     elif classe == "bdr":
         sufixo = "BDR"
     else:
-        sufixo = {"3": "ACNOR", "4": "ACNPR", "5": "ACNPA", "6": "ACNPB", "11": "UNT"}.get(ticker[4:], "")
+        sufixo = {"3": "ACNOR", "4": "ACNPR", "5": "ACNPA", "6": "ACNPB", "11": "CDAM"}.get(ticker[4:], "")
     if sufixo and any(sufixo in (x.get("isinCode") or "") for x in lst):
         lst = [x for x in lst if sufixo in (x.get("isinCode") or "")]
     out = []
@@ -207,6 +207,10 @@ def b3_proventos(ticker, classe):
     return out
 
 # ---------------- Nasdaq (EUA) ----------------
+def data_eua(s):
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", str(s or ""))
+    return f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}" if m else None
+
 def nasdaq(ticker, classe):
     out, erro = [], None
     for ac in (["etf", "stocks"] if classe == "etf_ext" else ["stocks", "etf"]):
@@ -219,14 +223,14 @@ def nasdaq(ticker, classe):
             print("NASDAQ RAW", ticker, ac, json.dumps(js, ensure_ascii=False)[:1500])
         rows = (((js or {}).get("data") or {}).get("dividends") or {}).get("rows") or []
         for x in rows:
-            ex = data_br(x.get("exOrEffDate"))
+            ex = data_eua(x.get("exOrEffDate"))
             if not ex:
                 continue
             dc = dia_util_anterior(dt.date.fromisoformat(ex)).isoformat()
             v = num(x.get("amount"))
             if not v or not dentro_janela(dc):
                 continue
-            out.append({"dataCom": dc, "dataPagamento": data_br(x.get("paymentDate")), "valor": round(v, 8), "tipoTxt": x.get("type") or "", "moeda": "USD"})
+            out.append({"dataCom": dc, "dataPagamento": data_eua(x.get("paymentDate")), "valor": round(v, 8), "tipoTxt": x.get("type") or "", "moeda": "USD"})
         if out:
             return out
     if erro:
@@ -336,8 +340,12 @@ def main():
         if mercado:
             ok += 1
             linhas.append({"col": "mercado", "id": safe_id(a["ticker"]), "data": mercado})
-        vistos = set()
+        vistos, iguais = set(), set()
         for p in provs:
+            chave = (p["dataCom"], p["dataPagamento"], p["valor"], p["tipoTxt"])
+            if chave in iguais:  # registro repetido na fonte
+                continue
+            iguais.add(chave)
             tipo = tipo_padrao(p["tipoTxt"], a["classe"])
             pid = safe_id(f"{a['ticker']}_{p['dataCom']}_{tipo}")
             if pid in vistos:  # dois proventos do mesmo tipo na mesma data-com
