@@ -122,6 +122,9 @@ nav.bottom{display:none}
 .acct{display:flex;align-items:center;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line)}
 .acct:last-child{border-bottom:0}
 .acct .nm{font-weight:600}
+.money-in{position:relative;display:block}
+.money-in>.pfx{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-weight:600;pointer-events:none;font-size:14px}
+.money-in>input{text-align:right;padding-left:48px!important;font-variant-numeric:tabular-nums}
 .loading{padding:60px;text-align:center;color:var(--muted)}
 body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:none!important}
 .login{max-width:400px;margin:10vh auto 0}
@@ -829,6 +832,23 @@ async function salvarCfg(){
   toast('Ajustes salvos'); scheduleSync();
 }
 
+/* ============ campo de dinheiro (R$ à esquerda, números entrando pela direita) ============ */
+function mascara(el, moedaFn, permiteNeg){
+  if (!el || el.dataset.mask) return { prefixo(){} };
+  el.dataset.mask='1'; el.setAttribute('inputmode','numeric'); el.setAttribute('autocomplete','off'); el.removeAttribute('placeholder');
+  const w=document.createElement('span'); w.className='money-in'; el.parentNode.insertBefore(w, el); w.appendChild(el);
+  const pf=document.createElement('span'); pf.className='pfx'; w.insertBefore(pf, el);
+  const fmt = c => (c<0?'-':'') + fmtN(Math.abs(c)/100, 2);
+  const centavos = () => { const neg = permiteNeg && el.value.trim().startsWith('-'); const d = el.value.replace(/\D/g,''); return (parseInt(d||'0',10)) * (neg?-1:1); };
+  const fim = () => { try{ const n=el.value.length; el.setSelectionRange(n,n); }catch(e){} };
+  if (el.value.trim()!=='') el.value = fmt(Math.round(parseNum(el.value)*100)); else el.value = fmt(0);
+  el.addEventListener('keydown', e => { if (e.key==='-' || e.key==='Subtract'){ e.preventDefault(); if (permiteNeg){ el.value = fmt(-centavos()); fim(); el.dispatchEvent(new Event('input',{bubbles:true})); } } });
+  el.addEventListener('input', () => { const neg = permiteNeg && el.value.includes('-'); const d=el.value.replace(/\D/g,''); const c=parseInt(d||'0',10)*(neg?-1:1); el.value = fmt(c); fim(); });
+  el.addEventListener('focus', () => setTimeout(fim, 0)); el.addEventListener('click', fim);
+  const api = { prefixo(m){ pf.textContent = (m||(moedaFn&&moedaFn())||'BRL')==='USD' ? 'US$' : 'R$'; } };
+  api.prefixo(); return api;
+}
+
 /* ============ modais ============ */
 function modal(html, onMount){
   const root=$('#modalRoot'); root.innerHTML=`<div class="ovl"><div class="modal" role="dialog">${html}</div></div>`;
@@ -865,7 +885,7 @@ function abrirTransacao(id){
   ${['despesa','receita','transferencia'].includes(t.tipo)||!id ? `<div class="seg" id="segTipo" style="margin-bottom:10px">${[['despesa','Despesa'],['receita','Receita'],['transferencia','Transferência'],['cartao','💳 Cartão']].map(([v,n])=>`<button type="button" data-v="${v}" class="${st.aba===v?'on':''}">${n}</button>`).join('')}</div>
     <div class="seg" id="segCart" style="margin-bottom:14px;display:${st.aba==='cartao'?'flex':'none'}">${[['despesa','Compra'],['receita','Estorno / crédito']].map(([v,n])=>`<button type="button" data-v="${v}" class="${st.ctipo===v?'on':''}">${n}</button>`).join('')}</div>`:`<div class="pill" style="margin-bottom:12px">${t.tipo==='pagamento_fatura'?'Pagamento de fatura':t.tipo}</div>`}
   <form class="frm" id="ftx">
-    <label class="full">Valor<input name="valor" inputmode="decimal" required value="${t.valor!=null?fmtN(+t.valor,2):''}" placeholder="0,00" style="font-size:20px;font-weight:600"></label>
+    <label class="full">Valor<input name="valor" inputmode="decimal" required value="${t.valor!=null?fmtN(+t.valor,2):''}" style="font-size:22px;font-weight:600"></label>
     <label class="full">Descrição<input name="descricao" value="${esc(t.descricao||'')}" placeholder="Ex.: Mercado, Salário…" list="dlDesc" autocomplete="off"></label>
     <datalist id="dlDesc">${[...new Set(txAtivas().map(x=>x.descricao).filter(Boolean))].slice(-200).map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
     <label>Data<input name="data" type="date" required value="${t.data}"></label>
@@ -891,8 +911,11 @@ function abrirTransacao(id){
   <div class="mfoot">${id?`<button class="btn danger" id="btDel">Excluir</button>`:''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="btSave">Salvar</button></div>`;
   modal(html, (m, close) => {
     const F = $('#ftx',m);
+    const moedaMeio = () => { const mv=F.meio.value; return mv.startsWith('a:') ? ((D.contas[mv.slice(2)]||{}).moeda||'BRL') : 'BRL'; };
+    const mkValor = mascara(F.valor, moedaMeio), mkTaxa = mascara(F.taxa, moedaMeio), mkDest = mascara(F.valorDestino, ()=>((D.contas[F.contaDestinoId.value]||{}).moeda||'BRL'));
     const refresh = () => {
       st.tipo = st.aba==='cartao' ? st.ctipo : (t.tipo==='pagamento_fatura' ? 'pagamento_fatura' : st.aba);
+      mkValor.prefixo(); mkTaxa.prefixo(); mkDest.prefixo();
       const tp = st.tipo, mv = F.meio.value, isCard = mv.startsWith('c:');
       $('.f-cat',m).style.display = (tp==='transferencia'||tp==='pagamento_fatura')?'none':'';
       $('.f-dest',m).style.display = tp==='transferencia'?'':'none';
@@ -1010,11 +1033,12 @@ function abrirComposicao(id){
 function abrirAjuste(id){
   const t=D.transacoes[id]; const mo=(D.contas[t.contaId]||{}).moeda||'BRL';
   modal(`<h2>Ajuste de saldo · ${esc(contaNome(t.contaId))}</h2><form class="frm" id="faj">
-    <label>Valor (negativo para reduzir)<input name="valor" inputmode="decimal" value="${fmtN(+t.valor,2)}"></label>
+    <label>Valor (tecle − para negativo)<input name="valor" inputmode="decimal" value="${fmtN(+t.valor,2)}"></label>
     <label>Data<input name="data" type="date" value="${t.data}"></label>
     <label class="full">Descrição<input name="descricao" value="${esc(t.descricao||'Ajuste de saldo')}"></label>
     <div class="full hint">Ajustes mudam o saldo da conta, mas não contam como receita nem despesa nos relatórios.</div></form>
     <div class="mfoot"><button class="btn danger" id="del">Excluir</button><div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`,(m,close)=>{
+    mascara($('#faj',m).valor, ()=>mo, true);
     $('#ok',m).onclick=async()=>{ const F=$('#faj',m); await patch('transacoes',id,{valor:parseNum(F.valor.value), data:F.data.value, descricao:F.descricao.value.trim()}); close(); };
     $('#del',m).onclick=async()=>{ if(await confirmar('Excluir este ajuste?')){ await del('transacoes',id); close(); } };
   });
@@ -1029,6 +1053,7 @@ function abrirPagamento(cartaoId, ym){
     <label>Data<input name="data" type="date" value="${todayISO()<venc?todayISO():venc}"></label>
     <label class="full">Pagar com<select name="contaId">${list('contas').filter(c=>!c.arquivada).map(c=>`<option value="${c.id}" ${k.contaId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}</select></label>
   </form><div class="mfoot"><div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Registrar pagamento</button></div>`, (m,close)=>{
+    const mkP = mascara($('#fp',m).valor, ()=>((D.contas[$('#fp',m).contaId.value]||{}).moeda||'BRL')); $('#fp',m).contaId.onchange=()=>mkP.prefixo();
     $('#ok',m).onclick = async () => { const F=$('#fp',m); const v=parseNum(F.valor.value); if(!v) return;
       await put('transacoes', newId('transacoes'), {tipo:'pagamento_fatura', valor:v, data:F.data.value, contaId:F.contaId.value, cartaoId, faturaMes:ym, descricao:`Fatura ${k.nome}`, pago:true, origem:'manual', criadoEm:new Date().toISOString()});
       close(); toast('Pagamento registrado'); };
@@ -1051,6 +1076,7 @@ function abrirConta(id){
     ${id?`<div class="full"><button type="button" class="btn sm" id="btComp">Ver composição do saldo</button></div>`:''}
     ${id?`<label class="chk full"><input type="checkbox" name="arquivada" ${c.arquivada?'checked':''}> Ocultar conta (não uso mais; some das listas e mantém o histórico)</label>`:''}
   </form><div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
+    const FC=$('#fc',m); const mkI=mascara(FC.saldoInicial, ()=>FC.moeda.value, true), mkH=mascara(FC.saldoHoje, ()=>FC.moeda.value, true); FC.moeda.addEventListener('change',()=>{ mkI.prefixo(); mkH.prefixo(); });
     bindCor(m,()=>cor,v=>cor=v);
     const movAteHoje = id ? saldoConta(id) - (+c.saldoInicial||0) : 0; const FF=$('#fc',m);
     let editou = null; if ($('#btComp',m)) $('#btComp',m).onclick=()=>{ close(); abrirComposicao(id); };
@@ -1076,6 +1102,7 @@ function abrirCartao(id){
     <div class="full hint">Compras feitas depois do dia de fechamento vão para a fatura seguinte.</div>
     <div class="full"><div class="hint" style="margin-bottom:6px">Cor</div>${corPicker(cor)}</div>
   </form><div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
+    mascara($('#fk',m).limite, ()=>'BRL');
     bindCor(m,()=>cor,v=>cor=v);
     $('#ok',m).onclick = async () => { const F=$('#fk',m); if(!F.nome.value.trim()) return F.nome.focus();
       await put('cartoes', id||newId('cartoes'), {nome:F.nome.value.trim(), limite:parseNum(F.limite.value), contaId:F.contaId.value||null, fechamento:Math.max(1,Math.min(31,+F.fechamento.value||1)), vencimento:Math.max(1,Math.min(31,+F.vencimento.value||10)), cor}); close(); toast('Cartão salvo'); };
