@@ -180,6 +180,8 @@ def b3_proventos(ticker, classe):
     else:
         url = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetListedSupplementCompany/" + b3_b64({"issuingCompany": raiz, "language": "pt-br"})
     js = http_json(url)
+    if os.environ.get("DEBUG"):
+        print("B3 RAW", ticker, json.dumps(js, ensure_ascii=False)[:3000])
     blocos = js if isinstance(js, list) else [js]
     lst = []
     for b in blocos:
@@ -207,6 +209,8 @@ def nasdaq(ticker, classe):
             js = http_json(url, headers={"Origin": "https://www.nasdaq.com", "Referer": "https://www.nasdaq.com/"}, tentativas=1)
         except Exception as e:
             erro = e; continue
+        if os.environ.get("DEBUG"):
+            print("NASDAQ RAW", ticker, ac, json.dumps(js, ensure_ascii=False)[:1500])
         rows = (((js or {}).get("data") or {}).get("dividends") or {}).get("rows") or []
         for x in rows:
             ex = data_br(x.get("exOrEffDate"))
