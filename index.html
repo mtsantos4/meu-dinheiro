@@ -1221,18 +1221,22 @@ function mesFatura(v){ // '10/2026', 'out/2026', data → 'YYYY-MM'
 function abrirImport(){
   const cartoes=list('cartoes');
   modal(`<h2>Importar planilha</h2><div class="frm">
-    <label class="full">Esta planilha é de<select id="destino"><option value="contas">Minhas contas (receitas, despesas e transferências)</option>${cartoes.map(k=>`<option value="${k.id}">Cartão de crédito: ${esc(k.nome)}</option>`).join('')}</select></label>
+    <label class="full">Esta planilha é de<select id="destino"><option value="contas">Minhas contas (receitas, despesas e transferências)</option><option value="transf">Só transferências entre contas</option>${cartoes.map(k=>`<option value="${k.id}">Cartão de crédito: ${esc(k.nome)}</option>`).join('')}</select></label>
     ${cartoes.length?'':'<div class="full hint">Para importar um cartão, cadastre-o primeiro em Contas e cartões.</div>'}
     <label class="full">Arquivo (Excel ou CSV)<input type="file" id="fileCsv" accept=".xlsx,.xls,.csv,.txt"></label></div><div id="mapa"></div>
   <div class="mfoot"><div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok" disabled>Importar</button></div>`, (m,close)=>{
     let rows=[];
     const montar = () => {
       if (rows.length<2) return;
-      const cartao = $('#destino',m).value!=='contas';
+      const modoT = $('#destino',m).value==='transf'; const cartao = !modoT && $('#destino',m).value!=='contas';
       const H=rows[0].map(h=>String(h).trim()); const guess = re => H.findIndex(h=>re.test(h));
-      const g = {data:guess(/^data/i), desc:guess(/descri|hist|nome/i), valor:guess(/^valor|amount|montante/i), cat:guess(/^categ/i), conta:guess(/^conta|cart|carteira|account/i), tipo:guess(/^tipo/i), sub:guess(/subcateg/i), fatura:guess(/fatura/i)};
+      const g = {data:guess(/^data/i), desc:guess(/descri|hist|nome/i), valor:guess(/^valor|amount|montante/i), cat:guess(/^categ/i), conta:guess(/^conta$|^conta |cart|carteira|account/i), tipo:guess(/^tipo/i), sub:guess(/subcateg/i), fatura:guess(/fatura/i), origem:guess(/origem|^de$|sa[ií]da/i), dest:guess(/destino|^para$|entrada/i)};
+      if (g.conta<0) g.conta=guess(/conta/i);
       if (g.cat===g.sub) g.cat=guess(/^categoria$/i);
       const sel = (k, lbl, opt) => `<label>${lbl}<select data-k="${k}">${opt?'<option value="-1">— nenhuma —</option>':''}${H.map((h,i)=>`<option value="${i}" ${g[k]===i?'selected':''}>${esc(h||'(coluna '+(i+1)+')')}</option>`).join('')}</select></label>`;
+      if (modoT){ $('#mapa',m).innerHTML = `<div class="hint" style="margin:10px 0">${rows.length-1} linhas encontradas. Confira as colunas:</div><div class="frm">${sel('data','Data')}${sel('valor','Valor')}${sel('desc','Descrição',1)}${sel('origem','Conta de origem',1)}${sel('dest','Conta de destino',1)}${sel('conta','Conta (se for uma coluna só)',1)}
+          <div class="full hint">Se a planilha tiver colunas de origem e destino, cada linha vira uma transferência. Se tiver uma coluna "Conta" só, o app junta a saída (valor negativo) com a entrada (positivo) de mesma data e valor. Contas que não existirem são criadas.</div></div>
+          <div class="hint" style="margin-top:8px">Exemplo da 1ª linha: ${esc(rows[1].map(String).join(' | ').slice(0,180))}</div>`; $('#ok',m).disabled=false; return; }
       $('#mapa',m).innerHTML = `<div class="hint" style="margin:10px 0">${rows.length-1} linhas encontradas. Confira as colunas:</div><div class="frm">${sel('data','Data')}${sel('valor','Valor')}${sel('desc','Descrição',1)}${sel('cat','Categoria',1)}
         ${cartao? (()=>{ const kc=D.cartoes[$('#destino',m).value]; const fAtual=faturaMesPara(kc, todayISO());
           return `<label class="full">Estas compras são da fatura de<input type="month" id="mesFat" value="${fAtual}" required></label>
@@ -1261,7 +1265,7 @@ function abrirImport(){
     };
     $('#ok',m).onclick = async () => {
       const k = {}; m.querySelectorAll('[data-k]').forEach(s=>k[s.dataset.k]=+s.value);
-      const destino=$('#destino',m).value, modoCartao = destino!=='contas';
+      const destino=$('#destino',m).value, modoCartao = destino!=='contas' && destino!=='transf', modoT = destino==='transf';
       const btn=$('#ok',m); btn.disabled=true; btn.textContent='Importando…';
       const findBy = (col, nome) => list(col).find(x=>x.nome.toLowerCase().trim()===nome.toLowerCase().trim());
       const catDe = async (nm, tipo) => { if(!nm) return null; let c=list('categorias').find(x=>x.nome.toLowerCase()===nm.toLowerCase()&&x.tipo===tipo); if(!c){ const cid=newId(); await put('categorias',cid,{nome:nm,tipo,cor:PALETTE[list('categorias').length%PALETTE.length], investimento:/invest|aplica[çc]|resgate|corretora|\bb3\b/i.test(nm)}); c=D.categorias[cid]; } return c.id; };
@@ -1271,6 +1275,23 @@ function abrirImport(){
         const r=rows[i].map((c,j)=> (j===k.valor||j===k.data||j===k.fatura)? c : String(c??'').trim());
         const data=parseDataBR(r[k.data]); const v=parseNum(r[k.valor]); if(!data||!v){ skip++; continue; }
         linhas.push({r, data, v, desc: k.desc>=0? r[k.desc]:'', cat: k.cat>=0? r[k.cat]:''});
+      }
+      const contaPorNome = async nm => { nm=String(nm||'').trim(); if(!nm) return null; let c=findBy('contas',nm); if(!c){ const cid=newId(); await put('contas',cid,{nome:nm,tipo:'corrente',moeda:'BRL',saldoInicial:0,cor:PALETTE[list('contas').length%PALETTE.length]}); c=D.contas[cid]; } return c.id; };
+      if (modoT){
+        let semPar=0;
+        if (k.origem>=0 && k.dest>=0){
+          for (const l of linhas){ const o=await contaPorNome(l.r[k.origem]), d=await contaPorNome(l.r[k.dest]); if(!o||!d||o===d){ semPar++; continue; }
+            out.push(['transacoes', newId(), {tipo:'transferencia', valor:Math.abs(l.v), data:l.data, descricao:l.desc||'Transferência', contaId:o, contaDestinoId:d, pago:l.data<=hoje, origem:'import', lote, criadoEm:agora}]); transf++; }
+        } else {
+          for (const l of linhas) l.contaId = await contaPorNome(k.conta>=0? l.r[k.conta] : '');
+          const usados=new Set();
+          for (const a of linhas){ if (a.v>=0 || usados.has(a)) continue;
+            const b = linhas.find(x=>!usados.has(x) && x.v>0 && x.data===a.data && Math.abs(x.v+a.v)<0.005 && x.contaId!==a.contaId);
+            if (b && a.contaId && b.contaId){ usados.add(a); usados.add(b); out.push(['transacoes', newId(), {tipo:'transferencia', valor:Math.abs(a.v), data:a.data, descricao:a.desc||b.desc||'Transferência', contaId:a.contaId, contaDestinoId:b.contaId, pago:a.data<=hoje, origem:'import', lote, criadoEm:agora}]); transf++; } }
+          semPar = linhas.filter(l=>!usados.has(l)).length;
+        }
+        btn.textContent='Salvando…'; await putMany(out); close();
+        toast(`Importadas ${transf} transferências${semPar?` · ${semPar} linhas sem par (não importadas)`:''}`); return;
       }
       if (modoCartao){
         const kc = D.cartoes[destino]; const mesFat = $('#mesFat',m).value;
