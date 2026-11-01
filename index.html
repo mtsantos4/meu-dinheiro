@@ -953,7 +953,7 @@ function abrirConta(id){
     <label>Moeda<select name="moeda"><option value="BRL" ${c.moeda!=='USD'?'selected':''}>Real (R$)</option><option value="USD" ${c.moeda==='USD'?'selected':''}>Dólar (US$)</option></select></label>
     ${id? `<label class="full">Saldo de hoje (o que aparece no banco)<input name="saldoHoje" inputmode="decimal" value="${fmtN(saldoConta(id),2)}" style="font-weight:600"></label>
     <div class="full hint">Se o saldo do app não bater com o do banco, digite aqui o saldo real de hoje. O app ajusta o saldo inicial e mantém todo o histórico de lançamentos.</div>`
-    : `<label class="full">Saldo de hoje<input name="saldoHoje" inputmode="decimal" value="0,00"></label><div class="full hint">O saldo que a conta tem hoje no banco. Os próximos lançamentos partem daqui.</div>`}
+    : `<label class="full">Saldo inicial<input name="saldoHoje" inputmode="decimal" value="0,00"></label><div class="full hint">O saldo da conta antes do primeiro lançamento que você vai registrar ou importar. Se for importar o histórico do Mobills, use o saldo inicial que a conta tinha lá. Depois, dá para conferir e ajustar pelo saldo de hoje.</div>`}
     <div class="full"><div class="hint" style="margin-bottom:6px">Cor</div>${corPicker(cor)}</div>
     ${id?`<label class="chk full"><input type="checkbox" name="arquivada" ${c.arquivada?'checked':''}> Ocultar conta (não uso mais; some das listas e mantém o histórico)</label>`:''}
   </form><div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
