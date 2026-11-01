@@ -1,0 +1,28 @@
+name: Atualizar cotações e proventos
+
+on:
+  schedule:
+    - cron: "17 11 * * 1-5"   # 08:17 em Brasília, dias úteis
+    - cron: "17 22 * * 1-5"   # 19:17 em Brasília, dias úteis
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: "Modo teste (não grava): ex. PETR4:acao,MXRF11:fii,VOO:etf_ext,BTC:cripto. Deixe vazio para rodar de verdade."
+        required: false
+        default: ""
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Buscar e gravar
+        env:
+          SUPABASE_URL: https://cocaixvrkipbzfvjzykd.supabase.co
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          TICKERS: ${{ github.event.inputs.tickers }}
+        run: python scripts/atualizar.py
