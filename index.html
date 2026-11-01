@@ -669,19 +669,22 @@ function vTransacoes(){
   const f = ui.f; const q = (f.q||'').toLowerCase();
   let txs = txAtivas().filter(t=>{
     if (ui.faturaVer && f.conta.startsWith('c:')) { if (t.cartaoId!==f.conta.slice(2) || (t.faturaMes!==ui.faturaVer && !(t.tipo==='pagamento_fatura'))) return false; if(t.tipo==='pagamento_fatura' && t.faturaMes!==ui.faturaVer) return false; }
+    else if (f.de || f.ate){ if ((f.de && t.data<f.de) || (f.ate && t.data>f.ate)) return false; }
     else if (mesComp(t)!==ui.mes) return false;
     if (f.conta){ const [k,id]=f.conta.split(':'); if (k==='a' && t.contaId!==id && t.contaDestinoId!==id) return false; if (k==='c' && t.cartaoId!==id) return false; }
     if (f.cat && t.categoriaId!==f.cat) return false;
     if (f.tipo==='conferir'){ if(!t.conferir) return false; } else if (f.tipo && t.tipo!==f.tipo) return false;
     if (q && !((t.descricao||'')+' '+catNome(t.categoriaId)+' '+(t.obs||'')).toLowerCase().includes(q)) return false;
     return true;
-  }).sort((a,b)=>(b.data+(b.criadoEm||'')).localeCompare(a.data+(a.criadoEm||'')));
+  }).sort((a,b)=>{ const o=f.ordem||'desc';
+    if (o==='valor') return (+b.valor||0)-(+a.valor||0);
+    const c=(a.data+(a.criadoEm||'')).localeCompare(b.data+(b.criadoEm||'')); return o==='asc'? c : -c; });
   let rec=0, desp=0; txs.forEach(t=>{ if(TIPOS_NAO_RESULTADO.has(t.tipo) || ehInvest(t)) return; const v=+t.valor||0; if(t.tipo==='receita') rec+=v; else if(t.tipo==='despesa') desp+=v; });
   const groups = {}; txs.forEach(t=>(groups[t.data]=groups[t.data]||[]).push(t));
   const pend = txAtivas().filter(t=>t.conferir).length;
   const titulo = ui.faturaVer ? `Fatura ${cartaoNome(f.conta.slice(2))} · ${mesNome(ui.faturaVer)}` : '';
   return `
-  <header class="top"><h1>Transações</h1><div class="sp"></div>${ui.faturaVer? `<span class="pill acc">${esc(titulo)}</span><button class="btn sm" id="sairFat">Voltar ao mês</button>` : monthNav()}<button class="btn pri hide-m" data-act="novaTx">+ Lançamento</button></header>
+  <header class="top"><h1>Transações</h1><div class="sp"></div>${ui.faturaVer? `<span class="pill acc">${esc(titulo)}</span><button class="btn sm" id="sairFat">Voltar ao mês</button>` : (f.de||f.ate)? `<span class="pill acc">${f.per==='tudo'?'Todo o histórico':`${f.de?fmtData(f.de):'início'} a ${f.ate?fmtData(f.ate):'hoje'}`}</span><button class="btn sm" id="limpaPer">Voltar ao mês</button>` : monthNav()}<button class="btn pri hide-m" data-act="novaTx">+ Lançamento</button></header>
   ${pend? `<div class="banner"><span>${pend} provento${pend>1?'s':''} para conferir</span><div class="sp"></div><button class="btn sm" id="fConf">Mostrar</button><button class="btn sm" data-act="conferirTodos">Marcar todos como conferidos</button></div>`:''}
   <div class="filters">
     <input id="fq" placeholder="Buscar…" value="${esc(f.q)}" style="flex:1;min-width:140px">
@@ -689,15 +692,29 @@ function vTransacoes(){
     <select id="fcat"><option value="">Todas as categorias</option>${catOptions(f.cat)}</select>
     <select id="ftipo"><option value="">Todos os tipos</option>${[['despesa','Despesas'],['receita','Receitas'],['transferencia','Transferências'],['pagamento_fatura','Pagamentos de fatura'],['aplicacao','Aplicações'],['resgate','Resgates'],['conferir','A conferir']].map(([v,n])=>`<option value="${v}" ${f.tipo===v?'selected':''}>${n}</option>`).join('')}</select>
   </div>
+  <div class="filters">
+    <select id="fper"><option value="">Período: mês selecionado</option>${[['7','Últimos 7 dias'],['30','Últimos 30 dias'],['90','Últimos 90 dias'],['ano','Este ano'],['ano1','Últimos 12 meses'],['tudo','Todo o histórico'],['custom','Escolher datas…']].map(([v,n])=>`<option value="${v}" ${f.per===v?'selected':''}>${n}</option>`).join('')}</select>
+    <label class="row" style="gap:6px;${f.per==='custom'?'':'display:none'}" id="fdatas"><span class="hint">De</span><input type="date" id="fde" value="${f.de||''}"><span class="hint">até</span><input type="date" id="fate" value="${f.ate||''}"></label>
+    <select id="fordem">${[['desc','Data: mais recentes primeiro'],['asc','Data: mais antigas primeiro'],['valor','Maior valor primeiro']].map(([v,n])=>`<option value="${v}" ${ (f.ordem||'desc')===v?'selected':''}>${n}</option>`).join('')}</select>
+    <span class="hint" style="align-self:center">${txs.length} lançamento${txs.length!==1?'s':''}</span>
+  </div>
   <div class="grid g3" style="margin-bottom:14px">
     <div class="card kpi"><div class="lbl">Receitas</div><div class="val pos">${money(rec)}</div></div>
     <div class="card kpi"><div class="lbl">Despesas</div><div class="val neg">${money(desp)}</div></div>
     <div class="card kpi"><div class="lbl">Resultado</div><div class="val ${rec-desp>=0?'pos':'neg'}">${money(rec-desp)}</div></div>
   </div>
-  <div class="card">${Object.keys(groups).length? Object.entries(groups).map(([d,ts])=>`<div class="dayhdr">${diaNome(d)}</div>${ts.map(txRow).join('')}`).join('') : '<div class="empty">Nenhum lançamento encontrado</div>'}</div>`;
+  <div class="card">${!txs.length? '<div class="empty">Nenhum lançamento encontrado</div>' : (f.ordem==='valor'? txs.map(t=>txRow(t).replace('<div class="d2">',`<div class="d2">${fmtData(t.data)} · `)).join('') : Object.entries(groups).map(([d,ts])=>`<div class="dayhdr">${diaNome(d)}${d.slice(0,4)!==String(new Date().getFullYear())?' de '+d.slice(0,4):''}</div>${ts.map(txRow).join('')}`).join(''))}</div>`;
 }
 afterRender.transacoes = () => {
-  const upd = () => { ui.f = {q:$('#fq').value, conta:$('#fconta').value, cat:$('#fcat').value, tipo:$('#ftipo').value}; if(!ui.f.conta.startsWith('c:')) ui.faturaVer=null; render(); };
+  const periodo = (per, de, ate) => { const h=todayISO(), menos=n=>{ const d=new Date(); d.setDate(d.getDate()-n); return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; };
+    if (per==='7') return [menos(6),h]; if (per==='30') return [menos(29),h]; if (per==='90') return [menos(89),h];
+    if (per==='ano') return [h.slice(0,4)+'-01-01', h.slice(0,4)+'-12-31']; if (per==='ano1') return [menos(364),h]; if (per==='tudo') return ['0000-01-01','9999-12-31'];
+    if (per==='custom') return [de||'', ate||'']; return ['',''];
+  };
+  const upd = () => { const per=$('#fper').value; const [de,ate]=periodo(per, $('#fde').value, $('#fate').value);
+    ui.f = {q:$('#fq').value, conta:$('#fconta').value, cat:$('#fcat').value, tipo:$('#ftipo').value, per, de, ate, ordem:$('#fordem').value}; if(!ui.f.conta.startsWith('c:')) ui.faturaVer=null; render(); };
+  ['#fper','#fde','#fate','#fordem'].forEach(sl=>$(sl).onchange=upd);
+  if ($('#limpaPer')) $('#limpaPer').onclick=()=>{ Object.assign(ui.f,{per:'',de:'',ate:''}); render(); };
   let qt; $('#fq').oninput = () => { clearTimeout(qt); qt=setTimeout(()=>{ upd(); const el=$('#fq'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 300); };
   ['#fconta','#fcat','#ftipo'].forEach(s=>$(s).onchange=upd);
   if ($('#sairFat')) $('#sairFat').onclick=()=>{ ui.faturaVer=null; ui.f.conta=''; render(); };
