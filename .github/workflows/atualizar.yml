@@ -10,6 +10,10 @@ on:
         description: "Modo teste (não grava): ex. PETR4:acao,MXRF11:fii,VOO:etf_ext,BTC:cripto. Deixe vazio para rodar de verdade."
         required: false
         default: ""
+      debug:
+        description: "Mostrar respostas brutas das fontes (1 = sim)"
+        required: false
+        default: ""
 
 jobs:
   atualizar:
@@ -25,4 +29,5 @@ jobs:
           SUPABASE_URL: https://cocaixvrkipbzfvjzykd.supabase.co
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           TICKERS: ${{ github.event.inputs.tickers }}
+          DEBUG: ${{ github.event.inputs.debug }}
         run: python scripts/atualizar.py
