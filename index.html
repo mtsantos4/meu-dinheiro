@@ -173,6 +173,10 @@ body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:no
   .stickytop header.top{margin-bottom:8px}.stickytop header.top h1{font-size:19px}
   .kpimini .val{font-size:14px}.kpimini .card{padding:7px 9px}
   .toolbar select{max-width:136px;padding:8px 6px}
+  /* no celular, os filtros abrem como uma folha que sobe de baixo, dentro da tela */
+  .ddpanel{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;max-height:72vh;border-radius:18px 18px 0 0;padding:8px 8px calc(14px + env(safe-area-inset-bottom));z-index:60;box-shadow:0 -10px 40px rgba(0,0,0,.35)}
+  .ddfundo{position:fixed;inset:0;background:rgba(10,15,13,.45);z-index:55}
+  .dditem{padding:13px 12px;font-size:16px}
   /* iPhone: campos com 16px evitam o zoom automático ao tocar */
   input,select,textarea,.frm input,.frm select,.frm textarea,.filters select,.filters input{font-size:16px!important}
 }
@@ -752,7 +756,7 @@ function periodoDe(per, de, ate){ const h=todayISO(), menos=n=>{ const d=new Dat
 afterRender.transacoes = () => {
   const f = ui.f; const P = $('#ddPanel');
   const TIPOS_F = [['despesa','Despesas'],['receita','Receitas'],['transferencia','Transferências'],['pagamento_fatura','Pagamentos de fatura'],['aplicacao','Aplicações'],['resgate','Resgates'],['ajuste','Ajustes de saldo'],['conferir','A conferir']];
-  const aplicar = obj => { Object.assign(ui.f, obj); if (!String(ui.f.conta||'').startsWith('c:')) ui.faturaVer=null; render(); };
+  const aplicar = obj => { const fu=$('.ddfundo'); if(fu){ fu.remove(); destravarFundo(); } if (P.parentNode===document.body) P.remove(); Object.assign(ui.f, obj); if (!String(ui.f.conta||'').startsWith('c:')) ui.faturaVer=null; render(); };
   const item = (val, label, ativo, extra='') => `<button class="dditem ${ativo?'on':''}" data-v="${esc(val)}" ${extra}>${label}${ativo?' ✓':''}</button>`;
   const passo = (qual) => {
     let h='';
@@ -774,9 +778,12 @@ afterRender.transacoes = () => {
       else if (qual==='per'){ const [de,ate]=periodoDe(v); aplicar({per:v, de, ate}); } });
     if ($('#ddAplica',P)) $('#ddAplica',P).onclick=e=>{ e.stopPropagation(); const de=$('#ddDe',P).value, ate=$('#ddAte',P).value; if(!de&&!ate){ toast('Escolha as datas'); return; } aplicar({per:'custom', de, ate}); };
   };
-  const fechar = () => { P.hidden=true; document.removeEventListener('click', fora); };
-  const fora = e => { if (!e.target.closest('.dd')) fechar(); };
-  $('#btFiltros').onclick = e => { e.stopPropagation(); if (!P.hidden) return fechar(); passo(''); P.hidden=false; setTimeout(()=>document.addEventListener('click', fora),0); };
+  const casa = $('.dd');
+  const fechar = () => { P.hidden=true; document.removeEventListener('click', fora); const fu=$('.ddfundo'); if(fu){ fu.remove(); destravarFundo(); } if (P.parentNode===document.body){ if (casa && document.body.contains(casa)) casa.appendChild(P); else P.remove(); } };
+  const fora = e => { if (!e.target.closest('.dd') && !e.target.closest('#ddPanel')) fechar(); };
+  $('#btFiltros').onclick = e => { e.stopPropagation(); if (!P.hidden) return fechar(); passo(''); P.hidden=false;
+    if (window.innerWidth<=760){ const fu=document.createElement('div'); fu.className='ddfundo'; fu.addEventListener('click', ev=>{ ev.stopPropagation(); fechar(); }); fu.addEventListener('touchmove', ev=>ev.preventDefault(), {passive:false}); document.body.appendChild(fu); document.body.appendChild(P); travarFundo(); }
+    setTimeout(()=>document.addEventListener('click', fora),0); };
   P.addEventListener('click', e=>e.stopPropagation());
   document.querySelectorAll('[data-limpa]').forEach(b=>b.onclick=()=>{ const k=b.dataset.limpa;
     if (k==='tudo') aplicar({conta:'',cat:'',tipo:'',per:'',de:'',ate:''}); else if (k==='per') aplicar({per:'',de:'',ate:''}); else aplicar({[k]:''}); });
