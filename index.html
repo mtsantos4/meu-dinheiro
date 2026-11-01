@@ -582,7 +582,12 @@ const ACTS = {
   conferirTodos: async ()=>{ for (const t of txAtivas().filter(t=>t.conferir)) await patch('transacoes', t.id, {conferir:false}); toast('Tudo conferido'); },
   editCat: id=>abrirCategoria(id), novaCat: ()=>abrirCategoria(),
   editProv: id=>abrirProvento(id), novoProv: ()=>abrirProvento(), precoManual: id=>abrirPreco(id),
-  desfazerImport: async id => { const ids=list('transacoes').filter(t=>t.lote===id).map(t=>t.id); if(!(await confirmar(`Apagar os ${ids.length} lançamentos desta importação? Contas e categorias criadas por ela continuam; você pode excluí-las depois se ficarem vazias.`,'Apagar'))) return; toast('Apagando…'); await delMany('transacoes', ids); toast(`${ids.length} lançamentos apagados`); },
+  conciliar: ()=>abrirConciliar(),
+  desfazerImport: async id => { const ids=list('transacoes').filter(t=>t.lote===id).map(t=>t.id); const mov=list('transacoes').filter(t=>t.conciliacao===id);
+    if(!(await confirmar(mov.length? `Desfazer esta conciliação? ${mov.length} compras voltam para as contas de origem e ${ids.length} lançamentos criados por ela são apagados.` : `Apagar os ${ids.length} lançamentos desta importação? Contas e categorias criadas por ela continuam; você pode excluí-las depois se ficarem vazias.`, mov.length?'Desfazer':'Apagar'))) return;
+    toast('Desfazendo…');
+    if (mov.length) await putMany(mov.map(t=>{ const a=t.antes||{}; const d={...t}; delete d.conciliacao; delete d.antes; delete d.conciliadoEm; d.contaId=a.contaId||null; d.cartaoId=a.cartaoId||null; d.faturaMes=a.faturaMes||null; d.pago=a.pago!==undefined?a.pago:true; return ['transacoes', t.id, d]; }));
+    await delMany('transacoes', ids); toast('Desfeito'); },
   toggleArq: ()=>{ ui.verArquivadas=!ui.verArquivadas; render(); }, salvarCfg: salvarCfg, sair: ()=>sair(), mudarNome: ()=>pedirNome(), atualizarMercado: ()=>dispararAtualizacao(), importar: abrirImport, backup: copiarBackup, restaurar: abrirRestaurar,
   goContas: ()=>go('contas'), goCarteira: ()=>go('carteira'), goTx: ()=>go('transacoes'),
   togglePago: async id=>{ const t=D.transacoes[id]; await patch('transacoes', id, {pago:!t.pago}); }
@@ -783,10 +788,11 @@ function vAjustes(){
       <h3 class="mt">Conta</h3><div class="row" style="flex-wrap:wrap"><span style="flex:1">${esc(userNome||'')} · ${esc(userEmail)}</span><button class="btn sm" data-act="mudarNome">Mudar nome</button><button class="btn sm" data-act="sair">Sair</button></div>
       <h3 class="mt">Atualização automática</h3><div class="hint">Última execução: ${c.ultimaAtualizacao? new Date(c.ultimaAtualizacao).toLocaleString('pt-BR'):'ainda não rodou'}${c.ultimaAtualizacaoObs?' · '+esc(c.ultimaAtualizacaoObs):''}</div>`;
   } else if (tab==='dados'){
-    body = `<h3>Importar do Mobills</h3><div class="hint" style="margin-bottom:10px">No Mobills, exporte as transações (o arquivo do Excel serve direto). Aqui você escolhe qual coluna é a data, a descrição, o valor, a categoria e a conta. Contas e categorias que não existirem são criadas.</div><button class="btn pri" data-act="importar">Importar planilha</button>
-      ${(()=>{ const lotes={}; list('transacoes').forEach(t=>{ if(t.lote){ const l=lotes[t.lote]=lotes[t.lote]||{n:0,em:t.criadoEm||'',min:t.data,max:t.data}; l.n++; if(t.data<l.min)l.min=t.data; if(t.data>l.max)l.max=t.data; } });
+    body = `<h3>Importar do Mobills</h3><div class="hint" style="margin-bottom:10px">No Mobills, exporte as transações (o arquivo do Excel serve direto). Aqui você escolhe qual coluna é a data, a descrição, o valor, a categoria e a conta. Contas e categorias que não existirem são criadas.</div><div class="row" style="flex-wrap:wrap"><button class="btn pri" data-act="importar">Importar planilha</button><button class="btn" data-act="conciliar">Conciliar relatório do cartão</button></div>
+      <div class="hint" style="margin-top:8px">Conciliar: se a planilha geral trouxe as compras do cartão como saídas de conta, o relatório do cartão do Mobills (com a data de pagamento de cada fatura) move cada compra para a fatura certa e registra os pagamentos.</div>
+      ${(()=>{ const lotes={}; list('transacoes').forEach(t=>{ const lid=t.conciliacao||t.lote; if(lid){ const l=lotes[lid]=lotes[lid]||{n:0,em:t.criadoEm||'',min:t.data,max:t.data,conc:false}; l.n++; if(t.conciliacao){ l.conc=true; if(t.conciliadoEm) l.em=t.conciliadoEm; } if(t.data<l.min)l.min=t.data; if(t.data>l.max)l.max=t.data; } });
         const ls=Object.entries(lotes).sort((a,b)=>b[1].em.localeCompare(a[1].em));
-        return ls.length? `<h3 class="mt">Importações feitas</h3>`+ls.map(([id,l])=>`<div class="acct" style="padding:8px 4px"><div style="flex:1"><div class="nm">${l.n} lançamentos</div><div class="hint">importados em ${l.em?new Date(l.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—'} · de ${fmtData(l.min)} a ${fmtData(l.max)}</div></div><button class="btn sm danger" data-act="desfazerImport" data-id="${id}">Desfazer</button></div>`).join('') : ''; })()}
+        return ls.length? `<h3 class="mt">Importações feitas</h3>`+ls.map(([id,l])=>`<div class="acct" style="padding:8px 4px"><div style="flex:1"><div class="nm">${l.conc?'Conciliação de cartão · ':''}${l.n} lançamentos</div><div class="hint">importados em ${l.em?new Date(l.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—'} · de ${fmtData(l.min)} a ${fmtData(l.max)}</div></div><button class="btn sm danger" data-act="desfazerImport" data-id="${id}">Desfazer</button></div>`).join('') : ''; })()}
       <h3 class="mt">Cópia de segurança</h3><div class="hint" style="margin-bottom:10px">Copia todos os seus dados em formato JSON. Cole num arquivo de texto e guarde.</div><div class="row"><button class="btn" data-act="backup">Copiar backup</button><button class="btn" data-act="restaurar">Restaurar de um backup</button></div>
       <div class="hint mt">${COLS.map(k=>`${k}: ${list(k).length}`).join(' · ')}</div>`;
   }
@@ -1253,6 +1259,80 @@ function abrirImport(){
       const partes=[`${ok} lançamentos`]; if(transf) partes.push(`${transf} transferências`); if(pgtos) partes.push(`${pgtos} pagamentos de fatura`);
       toast(`Importados: ${partes.join(', ')}${ign?` · ${ign} pagamentos de fatura ignorados`:''}${skip?` · ${skip} linhas sem data/valor`:''}`);
     };
+  });
+}
+const normDesc = s => String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/\(?\b\d{1,2}\s*\/\s*\d{1,2}\b\)?/g,' ').replace(/parcela|parc\.?/g,' ').replace(/[^a-z0-9]+/g,' ').trim();
+const descParecida = (a,b) => { a=normDesc(a); b=normDesc(b); if(!a||!b) return false; return a===b || a.includes(b) || b.includes(a); };
+const diasEntre = (a,b) => Math.round((Date.parse(a+'T12:00:00')-Date.parse(b+'T12:00:00'))/86400000);
+function abrirConciliar(){
+  const cartoes=list('cartoes'); if(!cartoes.length){ toast('Cadastre o cartão primeiro em Contas e cartões'); return; }
+  modal(`<h2>Conciliar relatório do cartão</h2><div class="frm">
+    <label class="full">Cartão<select id="cCart">${cartoes.map(k=>`<option value="${k.id}">${esc(k.nome)}</option>`).join('')}</select></label>
+    <label class="full">Relatório do cartão (Excel ou CSV)<input type="file" id="cFile" accept=".xlsx,.xls,.csv,.txt"></label>
+    <div class="full hint">No relatório do cartão, a data de cada compra é a data em que a fatura foi paga. Cada data vira uma fatura (mês do pagamento), e o app procura a mesma compra (valor e descrição) entre os lançamentos já importados, até 400 dias antes.</div></div>
+    <div id="cMapa"></div>
+    <div class="mfoot"><div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="cOk" disabled>Analisar</button></div>`, (m,close)=>{
+    let rows=[], plano=null;
+    $('#cFile',m).onchange = async e => {
+      const f=e.target.files[0]; if(!f) return; plano=null; $('#cOk',m).textContent='Analisar';
+      try { rows=await lerPlanilha(f); } catch(err){ $('#cMapa',m).innerHTML='<div class="hint">Não consegui ler: '+esc(err.message)+'</div>'; return; }
+      rows=rows.slice(acharCabecalho(rows)); if(rows.length<2){ $('#cMapa',m).innerHTML='<div class="hint">Arquivo sem linhas.</div>'; return; }
+      const H=rows[0].map(h=>String(h).trim()); const guess=re=>H.findIndex(h=>re.test(h));
+      const g={data:guess(/^data/i), desc:guess(/descri|hist|nome/i), valor:guess(/^valor|amount/i)};
+      const sel=(k,l,o)=>`<label>${l}<select data-c="${k}">${o?'<option value="-1">— nenhuma —</option>':''}${H.map((h,i)=>`<option value="${i}" ${g[k]===i?'selected':''}>${esc(h||'(coluna '+(i+1)+')')}</option>`).join('')}</select></label>`;
+      let neg=0,pos=0; rows.slice(1).forEach(r=>{ if(RE_PGTO_FATURA.test(String(r[g.desc]??''))) return; const v=parseNum(r[g.valor]); if(v<0)neg++; else if(v>0)pos++; });
+      const kc=D.cartoes[$('#cCart',m).value];
+      $('#cMapa',m).innerHTML=`<div class="hint" style="margin:10px 0">${rows.length-1} linhas. Confira:</div><div class="frm">${sel('data','Data (pagamento da fatura)')}${sel('valor','Valor')}${sel('desc','Descrição',1)}
+        <label>Compras aparecem como<select id="cSinal"><option value="-1" ${neg>=pos?'selected':''}>Valores negativos</option><option value="1" ${pos>neg?'selected':''}>Valores positivos</option></select></label>
+        <label class="chk full"><input type="checkbox" id="cPg" checked> Registrar o pagamento de cada fatura na data do relatório</label>
+        <label class="full">Faturas pagas com<select id="cConta">${list('contas').filter(c=>!c.arquivada).map(c=>`<option value="${c.id}" ${kc.contaId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}</select></label>
+        <label class="chk full"><input type="checkbox" id="cNovas" checked> Compras do relatório que não forem encontradas: criar no cartão</label></div><div id="cRes"></div>`;
+      $('#cOk',m).disabled=false;
+      $('#cMapa',m).querySelectorAll('select[data-c],#cSinal').forEach(el=>el.addEventListener('change',()=>{ plano=null; $('#cRes',m).innerHTML=''; $('#cOk',m).textContent='Analisar'; }));
+    };
+    $('#cOk',m).onclick = async () => {
+      const k={}; m.querySelectorAll('[data-c]').forEach(s=>k[s.dataset.c]=+s.value);
+      const kc=D.cartoes[$('#cCart',m).value], sinal=+$('#cSinal',m).value;
+      if (!plano){
+        // 1) linhas do relatório
+        const itens=[]; let ign=0;
+        for (let i=1;i<rows.length;i++){ const r=rows[i]; const data=parseDataBR(r[k.data]); const v=parseNum(r[k.valor]); const desc=k.desc>=0?String(r[k.desc]??'').trim():'';
+          if(!data||!v) continue; if (RE_PGTO_FATURA.test(desc)){ ign++; continue; }
+          itens.push({data, valor:Math.abs(v), estorno: Math.sign(v)!==sinal, desc, fat: monthOf(data)}); }
+        // 2) candidatos: lançamentos de conta ainda não conciliados
+        const cands = txAtivas().filter(t=>!t.cartaoId && !t.conciliacao && (t.tipo==='despesa'||t.tipo==='receita'));
+        const usados=new Set(); const match=[], novos=[];
+        // descrições iguais primeiro, depois só valor (se único)
+        for (const passo of [1,2]){
+          for (const it of itens){ if (it.m) continue;
+            const tipoEsp = it.estorno?'receita':'despesa';
+            let cs = cands.filter(t=>!usados.has(t.id) && t.tipo===tipoEsp && Math.abs(+t.valor-it.valor)<0.011 && diasEntre(it.data,t.data)>=-5 && diasEntre(it.data,t.data)<=400);
+            if (passo===1){ cs = cs.filter(t=>descParecida(t.descricao,it.desc)); if (!cs.length) continue; }
+            else if (!(cs.length===1 || (!it.desc && cs.length))) continue;
+            cs.sort((a,b)=>Math.abs(diasEntre(it.data,a.data))-Math.abs(diasEntre(it.data,b.data)));
+            const t=cs[0]; usados.add(t.id); it.m=t; match.push(it);
+          }
+        }
+        itens.forEach(it=>{ if(!it.m) novos.push(it); });
+        const faturas={}; itens.forEach(it=>{ const f=faturas[it.data]=faturas[it.data]||{data:it.data,fat:it.fat,total:0}; f.total += it.estorno?-it.valor:it.valor; });
+        plano={itens,match,novos,faturas,ign};
+        const fs=Object.values(faturas).sort((a,b)=>a.data.localeCompare(b.data));
+        $('#cRes',m).innerHTML = `<div class="card" style="margin-top:12px;padding:12px"><b>Resultado da análise</b>
+          <div class="hint" style="margin-top:6px">${match.length} compras encontradas nos lançamentos e que serão movidas para o cartão · ${novos.length} não encontradas${$('#cNovas',m).checked?' (serão criadas no cartão)':' (ficarão de fora)'} · ${fs.length} faturas${ign?` · ${ign} linhas de pagamento ignoradas`:''}</div>
+          <div class="tblwrap" style="max-height:180px;overflow:auto;margin-top:8px"><table><thead><tr><th>Pagamento</th><th>Fatura</th><th class="num">Total</th></tr></thead><tbody>${fs.map(f=>`<tr><td>${fmtData(f.data)}</td><td>${mesCurto(f.fat)}</td><td class="num">${money(f.total)}</td></tr>`).join('')}</tbody></table></div>
+          ${novos.length?`<details style="margin-top:8px"><summary class="hint">Ver as não encontradas</summary>${novos.slice(0,80).map(n=>`<div class="hint">${fmtData(n.data)} · ${esc(n.desc)} · ${money(n.valor)}</div>`).join('')}</details>`:''}</div>`;
+        $('#cOk',m).textContent='Aplicar'; return;
+      }
+      const btn=$('#cOk',m); btn.disabled=true; btn.textContent='Aplicando…';
+      const L=uid(), agora=new Date().toISOString(), ops=[];
+      for (const it of plano.match){ const t=it.m; const d={...t}; delete d.id; d.antes={contaId:t.contaId||null, cartaoId:null, faturaMes:t.faturaMes||null, pago:t.pago};
+        Object.assign(d,{contaId:null, cartaoId:kc.id, faturaMes:it.fat, pago:true, conciliacao:L, conciliadoEm:agora}); ops.push(['transacoes',t.id,d]); }
+      if ($('#cNovas',m).checked) for (const it of plano.novos) ops.push(['transacoes',newId(),{tipo:it.estorno?'receita':'despesa', valor:it.valor, data:it.data, descricao:it.desc, categoriaId:null, contaId:null, cartaoId:kc.id, faturaMes:it.fat, pago:true, origem:'import', lote:L, criadoEm:agora}]);
+      if ($('#cPg',m).checked) for (const f of Object.values(plano.faturas)) if (f.total>0.005) ops.push(['transacoes',newId(),{tipo:'pagamento_fatura', valor:Math.round(f.total*100)/100, data:f.data, contaId:$('#cConta',m).value, cartaoId:kc.id, faturaMes:f.fat, descricao:`Fatura ${kc.nome}`, pago:true, origem:'import', lote:L, criadoEm:agora}]);
+      await putMany(ops); close();
+      toast(`Conciliação feita: ${plano.match.length} compras movidas para o cartão${$('#cNovas',m).checked&&plano.novos.length?`, ${plano.novos.length} criadas`:''}`);
+    };
+    $('#cCart',m).onchange=()=>{ if(rows.length) $('#cFile',m).onchange({target:$('#cFile',m)}); };
   });
 }
 async function copiarBackup(){
