@@ -499,7 +499,9 @@ const TIPOS_NAO_RESULTADO = new Set(['transferencia','pagamento_fatura','aplicac
 function resumoMes(ym){
   let rec=0, desp=0, prov=0; const porCat={};
   for (const t of txAtivas()){
-    if (monthOf(t.data)!==ym || TIPOS_NAO_RESULTADO.has(t.tipo)) continue;
+    if (monthOf(t.data)!==ym) continue;
+    if (t.tipo==='transferencia' && +t.taxa>0){ const vt=toBRL(+t.taxa, (D.contas[t.contaId]||{}).moeda||'BRL'); const ct=catTaxas(); desp+=vt; porCat[ct]=(porCat[ct]||0)+vt; continue; }
+    if (TIPOS_NAO_RESULTADO.has(t.tipo)) continue;
     const moeda = t.cartaoId? 'BRL' : ((D.contas[t.contaId]||{}).moeda||'BRL');
     const v = toBRL(+t.valor||0, moeda);
     if (t.tipo==='receita' && t.cartaoId){ desp-=v; porCat[t.categoriaId||'_']=(porCat[t.categoriaId||'_']||0)-v; continue; }
@@ -508,6 +510,7 @@ function resumoMes(ym){
   }
   return {rec, desp, saldo: rec-desp, prov, porCat};
 }
+function catTaxas(){ const c=list('categorias').find(c=>c.tipo==='despesa' && /impost|taxa/i.test(c.nome)); return c?c.id:'_'; }
 function catProvId(){ const c=list('categorias').find(c=>c.tipo==='receita' && /provent|dividend|rendiment/i.test(c.nome)); return c?c.id:'proventos'; }
 const catNome = id => (D.categorias[id]||{}).nome || 'Sem categoria';
 const catCor = id => (D.categorias[id]||{}).cor || '#94a3b8';
@@ -629,7 +632,7 @@ function txRow(t){
   const isCard = !!t.cartaoId; let sinal=-1, cor='var(--neg)', ic='', bg=catCor(t.categoriaId), sub='';
   const moeda = isCard? 'BRL' : ((D.contas[t.contaId]||{}).moeda||'BRL');
   if (t.tipo==='receita'){ sinal=1; cor='var(--pos)'; }
-  if (t.tipo==='transferencia'){ sinal=0; cor='var(--text)'; bg='#64748b'; ic='⇄'; sub=`${contaNome(t.contaId)} → ${contaNome(t.contaDestinoId)}`; }
+  if (t.tipo==='transferencia'){ sinal=0; cor='var(--text)'; bg='#64748b'; ic='⇄'; sub=`${contaNome(t.contaId)} → ${contaNome(t.contaDestinoId)}`+(t.valorDestino!=null?` · recebeu ${money(+t.valorDestino,(D.contas[t.contaDestinoId]||{}).moeda||'BRL')}`:'')+(+t.taxa>0?` · taxas ${money(+t.taxa,(D.contas[t.contaId]||{}).moeda||'BRL')}`:''); }
   else if (t.tipo==='pagamento_fatura'){ sinal=-1; bg='#64748b'; ic='▤'; sub=`Fatura ${cartaoNome(t.cartaoId)} · ${mesCurto(t.faturaMes||'')} · ${contaNome(t.contaId)}`; }
   else if (t.tipo==='aplicacao'||t.tipo==='resgate'){ sinal=t.tipo==='resgate'?1:-1; cor= 'var(--text)'; bg='var(--acc)'; ic=t.tipo==='aplicacao'?'↗':'↙'; sub=`${t.tipo==='aplicacao'?'Aplicação':'Resgate'} · ${contaNome(t.contaId)}`; }
   else sub = `${catNome(t.categoriaId)} · ${isCard? '💳 '+cartaoNome(t.cartaoId)+(t.faturaMes?' ('+mesCurto(t.faturaMes)+')':'') : contaNome(t.contaId)}`;
@@ -815,6 +818,15 @@ function abrirTransacao(id){
     <label class="f-cat">Categoria<select name="categoriaId"></select></label>
     <label class="f-meio">${'Conta / cartão'}<select name="meio">${contas.map(c=>`<option value="a:${c.id}" ${meio==='a:'+c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}${list('cartoes').map(c=>`<option value="c:${c.id}" ${meio==='c:'+c.id?'selected':''}>💳 ${esc(c.nome)}</option>`).join('')}</select></label>
     <label class="f-dest" style="display:none">Para a conta<select name="contaDestinoId">${contas.map(c=>`<option value="${c.id}" ${t.contaDestinoId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}</select></label>
+    <div class="full f-fx" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px">
+      <div class="hint" style="margin-bottom:8px;font-weight:600" id="fxTit">Conversão de moeda</div>
+      <div class="frm">
+        <label>Cotação (R$ por US$)<input name="cambio" inputmode="decimal" value="${t.cambio?fmtN(+t.cambio,4):fmtN(cfg().usdbrl,4)}"></label>
+        <label><span id="lblTaxa">Taxas, spread e IOF</span><input name="taxa" inputmode="decimal" value="${t.taxa?fmtN(+t.taxa,2):'0,00'}"></label>
+        <label class="full"><span id="lblRec">Valor recebido</span><input name="valorDestino" inputmode="decimal" value="${t.valorDestino!=null?fmtN(+t.valorDestino,2):''}" style="font-weight:600"></label>
+        <div class="full hint" id="fxInfo"></div>
+      </div>
+    </div>
     <label class="f-fat" style="display:none">Fatura<input name="faturaMes" type="month" value="${t.faturaMes||''}"></label>
     <label class="f-rep">${id&&t.grupo?'Repetição':'Repetir'}<select name="rep" ${id?'disabled':''}><option value="">Não repetir</option><option value="parc">Parcelado</option><option value="fixo">Todo mês (fixo)</option></select></label>
     <label class="f-n" style="display:none">Quantidade<input name="n" type="number" min="2" max="120" value="2"></label>
@@ -829,6 +841,16 @@ function abrirTransacao(id){
       const tp = st.tipo, mv = F.meio.value, isCard = mv.startsWith('c:');
       $('.f-cat',m).style.display = (tp==='transferencia'||tp==='pagamento_fatura')?'none':'';
       $('.f-dest',m).style.display = tp==='transferencia'?'':'none';
+      const mo = (D.contas[mv.slice(2)]||{}).moeda||'BRL', md = (D.contas[F.contaDestinoId.value]||{}).moeda||'BRL';
+      const cruz = tp==='transferencia' && !isCard && mo!==md;
+      $('.f-fx',m).style.display = cruz?'':'none';
+      if (cruz){
+        $('#lblTaxa',m).textContent = `Taxas, spread e IOF (${mo==='USD'?'US$':'R$'})`; $('#lblRec',m).textContent = `Valor recebido (${md==='USD'?'US$':'R$'})`;
+        const v=parseNum(F.valor.value), cot=parseNum(F.cambio.value), tx=parseNum(F.taxa.value);
+        if (!F.valorDestino.dataset.touched && v && cot){ const liq=Math.max(0,v-tx); F.valorDestino.value = fmtN(mo==='BRL'? liq/cot : liq*cot, 2); }
+        const rec=parseNum(F.valorDestino.value);
+        $('#fxInfo',m).innerHTML = v&&rec ? `Cotação efetiva, já com as taxas: <b>R$ ${fmtN(mo==='BRL'? v/rec : rec/v, 4)}</b> por US$` : '';
+      }
       $('.f-fat',m).style.display = isCard && tp!=='transferencia' ? '':'none';
       $('.f-pago',m).style.display = isCard ? 'none':'';
       $('.f-rep',m).style.display = (tp==='transferencia'||id)?'none':'';
@@ -838,7 +860,10 @@ function abrirTransacao(id){
       if (isCard && !F.faturaMes.dataset.touched){ const k=D.cartoes[mv.slice(2)]; if(k) F.faturaMes.value = (id && t.cartaoId===k.id && t.faturaMes) ? t.faturaMes : faturaMesPara(k, F.data.value||todayISO()); }
     };
     m.querySelectorAll('#segTipo button').forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.v; m.querySelectorAll('#segTipo button').forEach(x=>x.classList.toggle('on',x===b)); F.categoriaId.value=''; refresh(); });
-    F.meio.onchange = refresh; F.rep.onchange = refresh; F.data.onchange = () => { if(!F.faturaMes.dataset.touched || !id) { F.faturaMes.dataset.touched=''; } refresh(); };
+    F.meio.onchange = refresh; F.rep.onchange = refresh; F.contaDestinoId.onchange = refresh;
+    ['valor','cambio','taxa'].forEach(n=>F[n].addEventListener('input', refresh));
+    F.valorDestino.addEventListener('input', ()=>{ F.valorDestino.dataset.touched='1'; refresh(); });
+    if (t.valorDestino!=null) F.valorDestino.dataset.touched='1'; F.data.onchange = () => { if(!F.faturaMes.dataset.touched || !id) { F.faturaMes.dataset.touched=''; } refresh(); };
     F.faturaMes.oninput = () => F.faturaMes.dataset.touched='1';
     F.descricao.onchange = () => { if (id) return; const prev = txAtivas().filter(x=>x.descricao===F.descricao.value && x.categoriaId).sort((a,b)=>b.data.localeCompare(a.data))[0]; if(prev && (prev.tipo===st.tipo)){ F.categoriaId.value=prev.categoriaId; } };
     refresh();
@@ -850,7 +875,11 @@ function abrirTransacao(id){
       const base = {...t}; delete base.id;
       Object.assign(base, {tipo:st.tipo, valor, descricao:F.descricao.value.trim(), data:F.data.value, obs:F.obs.value.trim(), origem: base.origem||'manual'});
       if (st.tipo!=='pagamento_fatura'){ base.contaId = isCard? null : mv.slice(2); base.cartaoId = isCard? mv.slice(2) : null; }
-      if (st.tipo==='transferencia'){ base.contaDestinoId=F.contaDestinoId.value; base.categoriaId=null; if(base.contaDestinoId===base.contaId){ toast('Escolha contas diferentes'); return; } } else { base.contaDestinoId=null; }
+      if (st.tipo==='transferencia'){ base.contaDestinoId=F.contaDestinoId.value; base.categoriaId=null; if(base.contaDestinoId===base.contaId){ toast('Escolha contas diferentes'); return; }
+        const mo=(D.contas[base.contaId]||{}).moeda||'BRL', md=(D.contas[base.contaDestinoId]||{}).moeda||'BRL';
+        if (mo!==md){ const vd=parseNum(F.valorDestino.value); if(!vd){ toast('Informe o valor recebido'); return; } base.valorDestino=vd; base.cambio=parseNum(F.cambio.value)||null; base.taxa=parseNum(F.taxa.value)||0; }
+        else { base.valorDestino=null; base.cambio=null; base.taxa=null; }
+      } else { base.contaDestinoId=null; base.valorDestino=null; base.cambio=null; base.taxa=null; }
       if (st.tipo!=='transferencia' && st.tipo!=='pagamento_fatura') base.categoriaId = F.categoriaId.value || null;
       base.faturaMes = isCard ? (F.faturaMes.value || faturaMesPara(D.cartoes[mv.slice(2)], base.data)) : (st.tipo==='pagamento_fatura'? base.faturaMes : null);
       base.pago = isCard ? true : F.pago.checked;
