@@ -349,7 +349,10 @@ def main():
             tipo = tipo_padrao(p["tipoTxt"], a["classe"])
             pid = safe_id(f"{a['ticker']}_{p['dataCom']}_{tipo}")
             if pid in vistos:  # dois proventos do mesmo tipo na mesma data-com
-                pid = safe_id(f"{pid}_{int(round(p['valor'] * 1e6))}")
+                base = pid
+                pid = safe_id(f"{base}_{p['dataPagamento'] or 'X'}")
+                if pid in vistos:
+                    pid = safe_id(f"{base}_{p['dataPagamento'] or 'X'}_{int(round(p['valor'] * 1e6))}")
                 if pid in vistos:
                     continue
             vistos.add(pid)
