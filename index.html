@@ -767,7 +767,7 @@ function vAjustes(){
       <h3 class="mt">Conta</h3><div class="row" style="flex-wrap:wrap"><span style="flex:1">${esc(userNome||'')} · ${esc(userEmail)}</span><button class="btn sm" data-act="mudarNome">Mudar nome</button><button class="btn sm" data-act="sair">Sair</button></div>
       <h3 class="mt">Atualização automática</h3><div class="hint">Última execução: ${c.ultimaAtualizacao? new Date(c.ultimaAtualizacao).toLocaleString('pt-BR'):'ainda não rodou'}${c.ultimaAtualizacaoObs?' · '+esc(c.ultimaAtualizacaoObs):''}</div>`;
   } else if (tab==='dados'){
-    body = `<h3>Importar do Mobills</h3><div class="hint" style="margin-bottom:10px">No Mobills, exporte as transações em CSV ou Excel salvo como CSV. Aqui você escolhe qual coluna é a data, a descrição, o valor, a categoria e a conta. Contas e categorias que não existirem são criadas.</div><button class="btn pri" data-act="importar">Importar arquivo CSV</button>
+    body = `<h3>Importar do Mobills</h3><div class="hint" style="margin-bottom:10px">No Mobills, exporte as transações (o arquivo do Excel serve direto). Aqui você escolhe qual coluna é a data, a descrição, o valor, a categoria e a conta. Contas e categorias que não existirem são criadas.</div><button class="btn pri" data-act="importar">Importar planilha</button>
       <h3 class="mt">Cópia de segurança</h3><div class="hint" style="margin-bottom:10px">Copia todos os seus dados em formato JSON. Cole num arquivo de texto e guarde.</div><div class="row"><button class="btn" data-act="backup">Copiar backup</button><button class="btn" data-act="restaurar">Restaurar de um backup</button></div>
       <div class="hint mt">${COLS.map(k=>`${k}: ${list(k).length}`).join(' · ')}</div>`;
   }
@@ -1100,25 +1100,45 @@ function parseCSV(text){
   row.push(cell); if(row.some(c=>c.trim()!=='')) rows.push(row);
   return rows;
 }
-function parseDataBR(s){ s=String(s||'').trim(); let m;
+function carregarScript(src){ return new Promise((ok,err)=>{ if([...document.scripts].some(x=>x.src===src)) return ok(); const el=document.createElement('script'); el.src=src; el.onload=ok; el.onerror=()=>err(new Error('não carregou '+src)); document.head.appendChild(el); }); }
+async function lerPlanilha(f){
+  const buf = await f.arrayBuffer();
+  if (/\.(xlsx|xlsm|xls|ods)$/i.test(f.name)){
+    await carregarScript('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js');
+    const wb = XLSX.read(buf, {type:'array', cellDates:true});
+    // usa a aba com mais linhas
+    let melhor=null; for (const n of wb.SheetNames){ const r=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:true,defval:''}); if(!melhor||r.length>melhor.length) melhor=r; }
+    return (melhor||[]).map(r=>r.map(c=> c instanceof Date ? `${c.getFullYear()}-${pad(c.getMonth()+1)}-${pad(c.getDate())}` : c)).filter(r=>r.some(c=>String(c).trim()!==''));
+  }
+  let txt=new TextDecoder('utf-8').decode(buf); if (txt.includes(String.fromCharCode(0xFFFD))) txt=new TextDecoder('windows-1252').decode(buf);
+  return parseCSV(txt);
+}
+function acharCabecalho(rows){ // pula linhas de título antes do cabeçalho
+  for (let i=0;i<Math.min(rows.length,15);i++){ const t=rows[i].map(c=>String(c).toLowerCase()); if (t.some(c=>/^data/.test(c.trim())) && t.some(c=>/valor/.test(c))) return i; }
+  return 0;
+}
+function parseDataBR(s){ if (typeof s==='number' && s>20000 && s<80000){ const d=new Date(Math.round((s-25569)*86400000)); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`; }
+  s=String(s||'').trim(); let m;
   if ((m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/))) { let y=+m[3]; if(y<100) y+=2000; return `${y}-${pad(m[2])}-${pad(m[1])}`; }
   if ((m=s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;
   return null; }
 function abrirImport(){
-  modal(`<h2>Importar CSV</h2><div class="frm"><label class="full">Arquivo<input type="file" id="fileCsv" accept=".csv,.txt,text/csv"></label></div><div id="mapa"></div>
+  modal(`<h2>Importar CSV</h2><div class="frm"><label class="full">Arquivo (Excel ou CSV)<input type="file" id="fileCsv" accept=".xlsx,.xls,.csv,.txt"></label></div><div id="mapa"></div>
   <div class="mfoot"><div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok" disabled>Importar</button></div>`, (m,close)=>{
     let rows=[];
     $('#fileCsv',m).onchange = async e => {
-      const f=e.target.files[0]; if(!f) return; let buf=await f.arrayBuffer(); let txt=new TextDecoder('utf-8').decode(buf); if (txt.includes(String.fromCharCode(0xFFFD))) txt=new TextDecoder('windows-1252').decode(buf);
-      rows=parseCSV(txt); if(rows.length<2){ $('#mapa',m).innerHTML='<div class="hint">Não encontrei linhas no arquivo.</div>'; return; }
-      const H=rows[0].map(h=>h.trim()); const guess = re => { const i=H.findIndex(h=>re.test(h)); return i; };
+      const f=e.target.files[0]; if(!f) return; $('#mapa',m).innerHTML='<div class="hint">Lendo arquivo…</div>';
+      try { rows=await lerPlanilha(f); } catch(err){ $('#mapa',m).innerHTML='<div class="hint">Não consegui ler o arquivo: '+esc(err.message)+'</div>'; return; }
+      rows = rows.slice(acharCabecalho(rows)).map(r=>r.map(c=>typeof c==='string'?c:c));
+      if(rows.length<2){ $('#mapa',m).innerHTML='<div class="hint">Não encontrei linhas no arquivo.</div>'; return; }
+      const H=rows[0].map(h=>String(h).trim()); const guess = re => { const i=H.findIndex(h=>re.test(h)); return i; };
       const g = {data:guess(/^data/i), desc:guess(/descri|hist|nome/i), valor:guess(/^valor|amount|montante/i), cat:guess(/^categ/i), conta:guess(/^conta|cart|carteira|account/i), tipo:guess(/^tipo/i), sub:guess(/subcateg/i)};
       if (g.cat===g.sub) g.cat=guess(/^categoria$/i);
       const sel = (k, lbl, opt) => `<label>${lbl}<select data-k="${k}">${opt?'<option value="-1">— nenhuma —</option>':''}${H.map((h,i)=>`<option value="${i}" ${g[k]===i?'selected':''}>${esc(h||'(coluna '+(i+1)+')')}</option>`).join('')}</select></label>`;
       $('#mapa',m).innerHTML = `<div class="hint" style="margin:10px 0">${rows.length-1} linhas encontradas. Confira as colunas:</div><div class="frm">${sel('data','Data')}${sel('valor','Valor')}${sel('desc','Descrição',1)}${sel('cat','Categoria',1)}${sel('conta','Conta / cartão',1)}${sel('tipo','Tipo (receita/despesa)',1)}
         <label class="full">Conta padrão (quando a linha não tiver conta)<select id="ctaPad">${list('contas').map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}<option value="__nova">Criar conta "Importada"</option></select></label>
         <label class="full">Sinal do valor<select id="sinal"><option value="auto">Negativo = despesa, positivo = receita</option><option value="tipo">Usar a coluna Tipo</option><option value="desp">Tudo é despesa</option></select></label></div>
-        <div class="hint" style="margin-top:8px">Exemplo da 1ª linha: ${esc(rows[1].join(' | ').slice(0,180))}</div>`;
+        <div class="hint" style="margin-top:8px">Exemplo da 1ª linha: ${esc(rows[1].map(String).join(' | ').slice(0,180))}</div>`;
       $('#ok',m).disabled=false;
     };
     $('#ok',m).onclick = async () => {
@@ -1128,7 +1148,7 @@ function abrirImport(){
       const findBy = (col, nome) => list(col).find(x=>x.nome.toLowerCase().trim()===nome.toLowerCase().trim());
       let ok=0, skip=0; const lote=uid(); const lote_tx=[];
       for (let i=1;i<rows.length;i++){
-        const r=rows[i]; const data=parseDataBR(r[k.data]); let v=parseNum(r[k.valor]); if(!data||!v){ skip++; continue; }
+        const r=rows[i].map((c,j)=> (j===k.valor||j===k.data)? c : String(c??'')); const data=parseDataBR(r[k.data]); let v=parseNum(r[k.valor]); if(!data||!v){ skip++; continue; }
         let tipo = v<0 ? 'despesa':'receita';
         if (sinal==='tipo' && k.tipo>=0){ const tt=(r[k.tipo]||'').toLowerCase(); tipo = /receit|entrada|cr[eé]dito/.test(tt)?'receita':'despesa'; }
         if (sinal==='desp') tipo='despesa';
