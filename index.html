@@ -502,11 +502,13 @@ function limiteUsado(cartaoId){
   const meses = new Set(txAtivas().filter(t=>t.cartaoId===cartaoId && t.faturaMes).map(t=>t.faturaMes));
   let u=0; meses.forEach(m=>{ const f=fatura(cartaoId,m); u+=Math.max(0,f.total-f.pago); }); return u;
 }
+// mês em que o lançamento conta: compras e estornos no cartão contam no mês da fatura
+const mesComp = t => (t.cartaoId && t.faturaMes && (t.tipo==='despesa'||t.tipo==='receita')) ? t.faturaMes : monthOf(t.data);
 const TIPOS_NAO_RESULTADO = new Set(['transferencia','pagamento_fatura','aplicacao','resgate']);
 function resumoMes(ym){
   let rec=0, desp=0, prov=0; const porCat={};
   for (const t of txAtivas()){
-    if (monthOf(t.data)!==ym) continue;
+    if (mesComp(t)!==ym) continue;
     if (t.tipo==='transferencia' && +t.taxa>0){ const vt=toBRL(+t.taxa, (D.contas[t.contaId]||{}).moeda||'BRL'); const ct=catTaxas(); desp+=vt; porCat[ct]=(porCat[ct]||0)+vt; continue; }
     if (TIPOS_NAO_RESULTADO.has(t.tipo)) continue;
     const moeda = t.cartaoId? 'BRL' : ((D.contas[t.contaId]||{}).moeda||'BRL');
@@ -596,7 +598,7 @@ function vInicio(){
   const cobertura = r.desp>0 ? r.prov/r.desp : 0;
   const cartoes = list('cartoes');
   const ym = monthOf(todayISO());
-  const ultimos = txAtivas().filter(t=>monthOf(t.data)===ui.mes).sort((a,b)=>(b.data+(b.criadoEm||'')).localeCompare(a.data+(a.criadoEm||''))).slice(0,6);
+  const ultimos = txAtivas().filter(t=>mesComp(t)===ui.mes).sort((a,b)=>(b.data+(b.criadoEm||'')).localeCompare(a.data+(a.criadoEm||''))).slice(0,6);
   const vazio = !contas.length && !list('ativos').length;
   return `
   <header class="top"><h1>Olá${userNome?', '+esc(userNome.split(' ')[0]):''}</h1><div class="sp"></div>${monthNav()}<button class="btn pri hide-m" data-act="novaTx">+ Lançamento</button></header>
@@ -646,6 +648,7 @@ function txRow(t){
   else if (t.tipo==='aplicacao'||t.tipo==='resgate'){ sinal=t.tipo==='resgate'?1:-1; cor= 'var(--text)'; bg='var(--acc)'; ic=t.tipo==='aplicacao'?'↗':'↙'; sub=`${t.tipo==='aplicacao'?'Aplicação':'Resgate'} · ${contaNome(t.contaId)}`; }
   else sub = `${catNome(t.categoriaId)} · ${isCard? '💳 '+cartaoNome(t.cartaoId)+(t.faturaMes?' ('+mesCurto(t.faturaMes)+')':'') : contaNome(t.contaId)}`;
   if (!ic) ic = esc((catNome(t.categoriaId)||'?').slice(0,1).toUpperCase());
+  if (isCard && t.faturaMes && monthOf(t.data)!==t.faturaMes) sub += ` · compra em ${fmtData(t.data)}`;
   const flags = `${t.parcela?` <span class="pill">${esc(t.parcela)}</span>`:''}${t.conferir?` <span class="pill warn">conferir</span>`:''}${!t.pago && !isCard?` <span class="pill">pendente</span>`:''}`;
   return `<div class="tx" data-tx="${t.id}"><div class="ic" style="background:${bg}">${ic}</div><div class="main"><div class="d1">${esc(t.descricao||catNome(t.categoriaId))}${flags}</div><div class="d2">${esc(sub)}</div></div><div class="v" style="color:${cor}">${sinal<0?'−':sinal>0?'+':''}${money(+t.valor||0, moeda)}${t.conferir?`<small><button class="btn sm" data-act="conferir" data-id="${t.id}">Conferido</button></small>`:''}</div></div>`;
 }
@@ -653,7 +656,7 @@ function vTransacoes(){
   const f = ui.f; const q = (f.q||'').toLowerCase();
   let txs = txAtivas().filter(t=>{
     if (ui.faturaVer && f.conta.startsWith('c:')) { if (t.cartaoId!==f.conta.slice(2) || (t.faturaMes!==ui.faturaVer && !(t.tipo==='pagamento_fatura'))) return false; if(t.tipo==='pagamento_fatura' && t.faturaMes!==ui.faturaVer) return false; }
-    else if (monthOf(t.data)!==ui.mes) return false;
+    else if (mesComp(t)!==ui.mes) return false;
     if (f.conta){ const [k,id]=f.conta.split(':'); if (k==='a' && t.contaId!==id && t.contaDestinoId!==id) return false; if (k==='c' && t.cartaoId!==id) return false; }
     if (f.cat && t.categoriaId!==f.cat) return false;
     if (f.tipo==='conferir'){ if(!t.conferir) return false; } else if (f.tipo && t.tipo!==f.tipo) return false;
