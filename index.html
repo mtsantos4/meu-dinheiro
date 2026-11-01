@@ -1139,47 +1139,100 @@ function parseDataBR(s){ if (typeof s==='number' && s>20000 && s<80000){ const d
   if ((m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/))) { let y=+m[3]; if(y<100) y+=2000; return `${y}-${pad(m[2])}-${pad(m[1])}`; }
   if ((m=s.match(/^(\d{4})-(\d{2})-(\d{2})/))) return `${m[1]}-${m[2]}-${m[3]}`;
   return null; }
+const RE_PGTO_FATURA = /pagamento.{0,15}fatura|pgto.{0,10}fatura|fatura.{0,10}paga|pagto.{0,10}fatura/i;
+function mesFatura(v){ // '10/2026', 'out/2026', data → 'YYYY-MM'
+  if (v==null || v==='') return null;
+  if (typeof v==='number' && v>20000) return monthOf(parseDataBR(v));
+  const s=String(v).trim().toLowerCase(); let m;
+  if ((m=s.match(/^(\d{4})-(\d{2})/))) return `${m[1]}-${m[2]}`;
+  if ((m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/))) { const y=+m[3]<100?2000+ +m[3]:+m[3]; return `${y}-${pad(m[2])}`; }
+  if ((m=s.match(/^(\d{1,2})[\/\-.](\d{4})$/))) return `${m[2]}-${pad(m[1])}`;
+  const i=MESES.findIndex(n=>s.startsWith(n.slice(0,3))); if (i>=0 && (m=s.match(/(\d{4}|\d{2})\s*$/))) { const y=m[1].length===2?2000+ +m[1]:+m[1]; return `${y}-${pad(i+1)}`; }
+  return null;
+}
 function abrirImport(){
-  modal(`<h2>Importar CSV</h2><div class="frm"><label class="full">Arquivo (Excel ou CSV)<input type="file" id="fileCsv" accept=".xlsx,.xls,.csv,.txt"></label></div><div id="mapa"></div>
+  const cartoes=list('cartoes');
+  modal(`<h2>Importar planilha</h2><div class="frm">
+    <label class="full">Esta planilha é de<select id="destino"><option value="contas">Minhas contas (receitas, despesas e transferências)</option>${cartoes.map(k=>`<option value="${k.id}">Cartão de crédito: ${esc(k.nome)}</option>`).join('')}</select></label>
+    ${cartoes.length?'':'<div class="full hint">Para importar um cartão, cadastre-o primeiro em Contas e cartões.</div>'}
+    <label class="full">Arquivo (Excel ou CSV)<input type="file" id="fileCsv" accept=".xlsx,.xls,.csv,.txt"></label></div><div id="mapa"></div>
   <div class="mfoot"><div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok" disabled>Importar</button></div>`, (m,close)=>{
     let rows=[];
-    $('#fileCsv',m).onchange = async e => {
-      const f=e.target.files[0]; if(!f) return; $('#mapa',m).innerHTML='<div class="hint">Lendo arquivo…</div>';
-      try { rows=await lerPlanilha(f); } catch(err){ $('#mapa',m).innerHTML='<div class="hint">Não consegui ler o arquivo: '+esc(err.message)+'</div>'; return; }
-      rows = rows.slice(acharCabecalho(rows)).map(r=>r.map(c=>typeof c==='string'?c:c));
-      if(rows.length<2){ $('#mapa',m).innerHTML='<div class="hint">Não encontrei linhas no arquivo.</div>'; return; }
-      const H=rows[0].map(h=>String(h).trim()); const guess = re => { const i=H.findIndex(h=>re.test(h)); return i; };
-      const g = {data:guess(/^data/i), desc:guess(/descri|hist|nome/i), valor:guess(/^valor|amount|montante/i), cat:guess(/^categ/i), conta:guess(/^conta|cart|carteira|account/i), tipo:guess(/^tipo/i), sub:guess(/subcateg/i)};
+    const montar = () => {
+      if (rows.length<2) return;
+      const cartao = $('#destino',m).value!=='contas';
+      const H=rows[0].map(h=>String(h).trim()); const guess = re => H.findIndex(h=>re.test(h));
+      const g = {data:guess(/^data/i), desc:guess(/descri|hist|nome/i), valor:guess(/^valor|amount|montante/i), cat:guess(/^categ/i), conta:guess(/^conta|cart|carteira|account/i), tipo:guess(/^tipo/i), sub:guess(/subcateg/i), fatura:guess(/fatura/i)};
       if (g.cat===g.sub) g.cat=guess(/^categoria$/i);
       const sel = (k, lbl, opt) => `<label>${lbl}<select data-k="${k}">${opt?'<option value="-1">— nenhuma —</option>':''}${H.map((h,i)=>`<option value="${i}" ${g[k]===i?'selected':''}>${esc(h||'(coluna '+(i+1)+')')}</option>`).join('')}</select></label>`;
-      $('#mapa',m).innerHTML = `<div class="hint" style="margin:10px 0">${rows.length-1} linhas encontradas. Confira as colunas:</div><div class="frm">${sel('data','Data')}${sel('valor','Valor')}${sel('desc','Descrição',1)}${sel('cat','Categoria',1)}${sel('conta','Conta / cartão',1)}${sel('tipo','Tipo (receita/despesa)',1)}
+      $('#mapa',m).innerHTML = `<div class="hint" style="margin:10px 0">${rows.length-1} linhas encontradas. Confira as colunas:</div><div class="frm">${sel('data','Data')}${sel('valor','Valor')}${sel('desc','Descrição',1)}${sel('cat','Categoria',1)}
+        ${cartao? sel('fatura','Mês da fatura (se houver)',1) + (()=>{ const vi=g.valor, di=g.desc; let neg=0,pos=0; rows.slice(1).forEach(r=>{ if(RE_PGTO_FATURA.test(String(r[di]??''))) return; const v=parseNum(r[vi]); if(v<0)neg++; else if(v>0)pos++; });
+          return `<label class="full">Compras aparecem como<select id="sinalCompra"><option value="-1" ${neg>=pos?'selected':''}>Valores negativos (positivos são estornos)</option><option value="1" ${pos>neg?'selected':''}>Valores positivos (negativos são estornos)</option></select></label>`; })() + `<div class="full hint">Linhas de "pagamento de fatura" são ignoradas: o pagamento vem da planilha das contas.</div>`
+        : `${sel('conta','Conta',1)}${sel('tipo','Tipo (receita/despesa)',1)}
         <label class="full">Conta padrão (quando a linha não tiver conta)<select id="ctaPad">${list('contas').map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}<option value="__nova">Criar conta "Importada"</option></select></label>
-        <label class="full">Sinal do valor<select id="sinal"><option value="auto">Negativo = despesa, positivo = receita</option><option value="tipo">Usar a coluna Tipo</option><option value="desp">Tudo é despesa</option></select></label></div>
+        <label class="full">Sinal do valor<select id="sinal"><option value="auto">Negativo = despesa, positivo = receita</option><option value="tipo">Usar a coluna Tipo</option></select></label>
+        <div class="full hint">Transferências entre suas contas (saída e entrada no mesmo dia e valor) viram uma transferência só. Linhas de "pagamento de fatura" viram pagamento do cartão citado na descrição.</div>`}</div>
         <div class="hint" style="margin-top:8px">Exemplo da 1ª linha: ${esc(rows[1].map(String).join(' | ').slice(0,180))}</div>`;
       $('#ok',m).disabled=false;
     };
+    $('#destino',m).onchange = montar;
+    $('#fileCsv',m).onchange = async e => {
+      const f=e.target.files[0]; if(!f) return; $('#mapa',m).innerHTML='<div class="hint">Lendo arquivo…</div>';
+      try { rows=await lerPlanilha(f); } catch(err){ $('#mapa',m).innerHTML='<div class="hint">Não consegui ler o arquivo: '+esc(err.message)+'</div>'; return; }
+      rows = rows.slice(acharCabecalho(rows));
+      if(rows.length<2){ $('#mapa',m).innerHTML='<div class="hint">Não encontrei linhas no arquivo.</div>'; return; }
+      montar();
+    };
     $('#ok',m).onclick = async () => {
       const k = {}; m.querySelectorAll('[data-k]').forEach(s=>k[s.dataset.k]=+s.value);
-      const sinal=$('#sinal',m).value; let ctaPad=$('#ctaPad',m).value; const btn=$('#ok',m); btn.disabled=true;
-      if (ctaPad==='__nova'){ ctaPad=newId('contas'); await put('contas', ctaPad, {nome:'Importada', tipo:'corrente', moeda:'BRL', saldoInicial:0, cor:'#64748b'}); }
+      const destino=$('#destino',m).value, modoCartao = destino!=='contas';
+      const btn=$('#ok',m); btn.disabled=true; btn.textContent='Importando…';
       const findBy = (col, nome) => list(col).find(x=>x.nome.toLowerCase().trim()===nome.toLowerCase().trim());
-      let ok=0, skip=0; const lote=uid(); const lote_tx=[];
+      const catDe = async (nm, tipo) => { if(!nm) return null; let c=list('categorias').find(x=>x.nome.toLowerCase()===nm.toLowerCase()&&x.tipo===tipo); if(!c){ const cid=newId(); await put('categorias',cid,{nome:nm,tipo,cor:PALETTE[list('categorias').length%PALETTE.length]}); c=D.categorias[cid]; } return c.id; };
+      let ok=0, skip=0, ign=0, transf=0, pgtos=0; const lote=uid(); const out=[]; const agora=new Date().toISOString(); const hoje=todayISO();
+      const linhas=[];
       for (let i=1;i<rows.length;i++){
-        const r=rows[i].map((c,j)=> (j===k.valor||j===k.data)? c : String(c??'')); const data=parseDataBR(r[k.data]); let v=parseNum(r[k.valor]); if(!data||!v){ skip++; continue; }
-        let tipo = v<0 ? 'despesa':'receita';
-        if (sinal==='tipo' && k.tipo>=0){ const tt=(r[k.tipo]||'').toLowerCase(); tipo = /receit|entrada|cr[eé]dito/.test(tt)?'receita':'despesa'; }
-        if (sinal==='desp') tipo='despesa';
-        v=Math.abs(v);
-        let categoriaId=null; if (k.cat>=0 && (r[k.cat]||'').trim()){ const nm=r[k.cat].trim(); let c=list('categorias').find(x=>x.nome.toLowerCase()===nm.toLowerCase()&&x.tipo===tipo); if(!c){ const cid=newId('categorias'); await put('categorias',cid,{nome:nm,tipo,cor:PALETTE[list('categorias').length%PALETTE.length]}); c=D.categorias[cid]; } categoriaId=c.id; }
-        let contaId=ctaPad, cartaoId=null;
-        if (k.conta>=0 && (r[k.conta]||'').trim()){ const nm=r[k.conta].trim(); const kc=findBy('cartoes',nm); if(kc){ cartaoId=kc.id; contaId=null; } else { let c=findBy('contas',nm); if(!c){ const cid=newId('contas'); await put('contas',cid,{nome:nm,tipo:'corrente',moeda:'BRL',saldoInicial:0,cor:PALETTE[list('contas').length%PALETTE.length]}); c=D.contas[cid]; } contaId=c.id; } }
-        const tx={tipo, valor:v, data, descricao: k.desc>=0? (r[k.desc]||'').trim():'', categoriaId, contaId, cartaoId, pago: data<=todayISO(), origem:'import', lote, criadoEm:new Date().toISOString()};
-        if (cartaoId) tx.faturaMes = faturaMesPara(D.cartoes[cartaoId], data);
-        lote_tx.push(['transacoes', newId(), tx]); ok++;
-        
+        const r=rows[i].map((c,j)=> (j===k.valor||j===k.data||j===k.fatura)? c : String(c??'').trim());
+        const data=parseDataBR(r[k.data]); const v=parseNum(r[k.valor]); if(!data||!v){ skip++; continue; }
+        linhas.push({r, data, v, desc: k.desc>=0? r[k.desc]:'', cat: k.cat>=0? r[k.cat]:''});
       }
-      btn.textContent='Salvando…'; await putMany(lote_tx);
-      close(); toast(`${ok} lançamentos importados${skip?`, ${skip} linhas ignoradas`:''}`);
+      if (modoCartao){
+        const kc = D.cartoes[destino];
+        const sinalCompra = +$('#sinalCompra',m).value;
+        for (const l of linhas){
+          if (RE_PGTO_FATURA.test(l.desc) || RE_PGTO_FATURA.test(l.cat)){ ign++; continue; }
+          const tipo = Math.sign(l.v)===sinalCompra ? 'despesa' : 'receita';
+          const fm = (k.fatura>=0 && mesFatura(l.r[k.fatura])) || faturaMesPara(kc, l.data);
+          out.push(['transacoes', newId(), {tipo, valor:Math.abs(l.v), data:l.data, descricao:l.desc, categoriaId: await catDe(l.cat, tipo), contaId:null, cartaoId:kc.id, faturaMes:fm, pago:true, origem:'import', lote, criadoEm:agora}]); ok++;
+        }
+      } else {
+        const sinal=$('#sinal',m).value; let ctaPad=$('#ctaPad',m).value;
+        if (ctaPad==='__nova'){ ctaPad=newId(); await put('contas', ctaPad, {nome:'Importada', tipo:'corrente', moeda:'BRL', saldoInicial:0, cor:'#64748b'}); }
+        for (const l of linhas){
+          let tipo = l.v<0 ? 'despesa':'receita';
+          if (sinal==='tipo' && k.tipo>=0){ const tt=(l.r[k.tipo]||'').toLowerCase(); tipo = /receit|entrada|cr[eé]dito/.test(tt)?'receita':'despesa'; }
+          let contaId=ctaPad;
+          if (k.conta>=0 && l.r[k.conta]){ const nm=l.r[k.conta]; let c=findBy('contas',nm); if(!c){ const cid=newId(); await put('contas',cid,{nome:nm,tipo:'corrente',moeda:'BRL',saldoInicial:0,cor:PALETTE[list('contas').length%PALETTE.length]}); c=D.contas[cid]; } contaId=c.id; }
+          l.tipo=tipo; l.contaId=contaId; l.ehTransf = /transfer/i.test(l.cat+' '+l.desc+' '+(k.tipo>=0?l.r[k.tipo]:''));
+        }
+        // junta saída + entrada da mesma transferência
+        const usados=new Set();
+        for (const a of linhas){ if(!a.ehTransf || a.tipo!=='despesa' || usados.has(a)) continue;
+          const b = linhas.find(x=>x!==a && !usados.has(x) && x.ehTransf && x.tipo==='receita' && x.data===a.data && Math.abs(Math.abs(x.v)-Math.abs(a.v))<0.005 && x.contaId!==a.contaId);
+          if (b){ usados.add(a); usados.add(b); out.push(['transacoes', newId(), {tipo:'transferencia', valor:Math.abs(a.v), data:a.data, descricao:a.desc||'Transferência', contaId:a.contaId, contaDestinoId:b.contaId, pago:a.data<=hoje, origem:'import', lote, criadoEm:agora}]); transf++; }
+        }
+        for (const l of linhas){ if (usados.has(l)) continue;
+          if (l.tipo==='despesa' && (RE_PGTO_FATURA.test(l.desc) || RE_PGTO_FATURA.test(l.cat))){
+            const txt=(l.desc+' '+l.cat).toLowerCase(); const kc = list('cartoes').find(c=>txt.includes(c.nome.toLowerCase())) || (list('cartoes').length===1? list('cartoes')[0] : null);
+            if (kc){ out.push(['transacoes', newId(), {tipo:'pagamento_fatura', valor:Math.abs(l.v), data:l.data, descricao:l.desc||`Fatura ${kc.nome}`, contaId:l.contaId, cartaoId:kc.id, faturaMes:monthOf(l.data), pago:l.data<=hoje, origem:'import', lote, criadoEm:agora}]); pgtos++; continue; }
+          }
+          out.push(['transacoes', newId(), {tipo:l.tipo, valor:Math.abs(l.v), data:l.data, descricao:l.desc, categoriaId: await catDe(l.cat, l.tipo), contaId:l.contaId, cartaoId:null, pago:l.data<=hoje, origem:'import', lote, criadoEm:agora}]); ok++;
+        }
+      }
+      btn.textContent='Salvando…'; await putMany(out);
+      close();
+      const partes=[`${ok} lançamentos`]; if(transf) partes.push(`${transf} transferências`); if(pgtos) partes.push(`${pgtos} pagamentos de fatura`);
+      toast(`Importados: ${partes.join(', ')}${ign?` · ${ign} pagamentos de fatura ignorados`:''}${skip?` · ${skip} linhas sem data/valor`:''}`);
     };
   });
 }
