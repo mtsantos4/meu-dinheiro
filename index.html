@@ -1166,14 +1166,22 @@ function abrirImport(){
       if (g.cat===g.sub) g.cat=guess(/^categoria$/i);
       const sel = (k, lbl, opt) => `<label>${lbl}<select data-k="${k}">${opt?'<option value="-1">— nenhuma —</option>':''}${H.map((h,i)=>`<option value="${i}" ${g[k]===i?'selected':''}>${esc(h||'(coluna '+(i+1)+')')}</option>`).join('')}</select></label>`;
       $('#mapa',m).innerHTML = `<div class="hint" style="margin:10px 0">${rows.length-1} linhas encontradas. Confira as colunas:</div><div class="frm">${sel('data','Data')}${sel('valor','Valor')}${sel('desc','Descrição',1)}${sel('cat','Categoria',1)}
-        ${cartao? sel('fatura','Mês da fatura (se houver)',1) + (()=>{ const vi=g.valor, di=g.desc; let neg=0,pos=0; rows.slice(1).forEach(r=>{ if(RE_PGTO_FATURA.test(String(r[di]??''))) return; const v=parseNum(r[vi]); if(v<0)neg++; else if(v>0)pos++; });
-          return `<label class="full">Compras aparecem como<select id="sinalCompra"><option value="-1" ${neg>=pos?'selected':''}>Valores negativos (positivos são estornos)</option><option value="1" ${pos>neg?'selected':''}>Valores positivos (negativos são estornos)</option></select></label>`; })() + `<div class="full hint">Linhas de "pagamento de fatura" são ignoradas: o pagamento vem da planilha das contas.</div>`
+        ${cartao? (()=>{ const kc=D.cartoes[$('#destino',m).value]; const fAtual=faturaMesPara(kc, todayISO());
+          return `<label class="full">Estas compras são da fatura de<input type="month" id="mesFat" value="${fAtual}" required></label>
+          <label class="chk full"><input type="checkbox" id="fatPaga"> Esta fatura já foi paga</label>
+          <div class="full frm" id="boxPg" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px">
+            <label>Data do pagamento<input type="date" id="pgData"></label>
+            <label>Pago com<select id="pgConta">${list('contas').filter(c=>!c.arquivada).map(c=>`<option value="${c.id}" ${kc.contaId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}</select></label>
+            <label class="full">Valor pago (em branco = total importado)<input id="pgValor" inputmode="decimal" placeholder="total da fatura"></label>
+          </div>`; })() + (()=>{ const vi=g.valor, di=g.desc; let neg=0,pos=0; rows.slice(1).forEach(r=>{ if(RE_PGTO_FATURA.test(String(r[di]??''))) return; const v=parseNum(r[vi]); if(v<0)neg++; else if(v>0)pos++; });
+          return `<label class="full">Compras aparecem como<select id="sinalCompra"><option value="-1" ${neg>=pos?'selected':''}>Valores negativos (positivos são estornos)</option><option value="1" ${pos>neg?'selected':''}>Valores positivos (negativos são estornos)</option></select></label>`; })() + `<div class="full hint">Linhas de "pagamento de fatura" que vierem na planilha são ignoradas; marque acima se a fatura já foi paga.</div>`
         : `${sel('conta','Conta',1)}${sel('tipo','Tipo (receita/despesa)',1)}
         <label class="full">Conta padrão (quando a linha não tiver conta)<select id="ctaPad">${list('contas').map(c=>`<option value="${c.id}">${esc(c.nome)}</option>`).join('')}<option value="__nova">Criar conta "Importada"</option></select></label>
         <label class="full">Sinal do valor<select id="sinal"><option value="auto">Negativo = despesa, positivo = receita</option><option value="tipo">Usar a coluna Tipo</option></select></label>
         <div class="full hint">Transferências entre suas contas (saída e entrada no mesmo dia e valor) viram uma transferência só. Linhas de "pagamento de fatura" viram pagamento do cartão citado na descrição.</div>`}</div>
         <div class="hint" style="margin-top:8px">Exemplo da 1ª linha: ${esc(rows[1].map(String).join(' | ').slice(0,180))}</div>`;
       $('#ok',m).disabled=false;
+      if ($('#fatPaga',m)){ const upd=()=>{ $('#boxPg',m).style.display=$('#fatPaga',m).checked?'':'none'; if($('#fatPaga',m).checked && !$('#pgData',m).value){ const kc=D.cartoes[$('#destino',m).value]; const mf=$('#mesFat',m).value; if(mf) $('#pgData',m).value=`${mf}-${pad(Math.min(+kc.vencimento||10,28))}`; } }; $('#fatPaga',m).onchange=upd; $('#mesFat',m).onchange=()=>{ $('#pgData',m).value=''; upd(); }; }
     };
     $('#destino',m).onchange = montar;
     $('#fileCsv',m).onchange = async e => {
@@ -1197,14 +1205,19 @@ function abrirImport(){
         linhas.push({r, data, v, desc: k.desc>=0? r[k.desc]:'', cat: k.cat>=0? r[k.cat]:''});
       }
       if (modoCartao){
-        const kc = D.cartoes[destino];
+        const kc = D.cartoes[destino]; const mesFat = $('#mesFat',m).value;
+        if (!mesFat){ toast('Escolha o mês da fatura'); btn.disabled=false; btn.textContent='Importar'; return; }
+        const paga = $('#fatPaga',m).checked; if (paga && !$('#pgData',m).value){ toast('Informe a data do pagamento'); btn.disabled=false; btn.textContent='Importar'; return; }
+        let totalFat = 0;
         const sinalCompra = +$('#sinalCompra',m).value;
         for (const l of linhas){
           if (RE_PGTO_FATURA.test(l.desc) || RE_PGTO_FATURA.test(l.cat)){ ign++; continue; }
           const tipo = Math.sign(l.v)===sinalCompra ? 'despesa' : 'receita';
-          const fm = (k.fatura>=0 && mesFatura(l.r[k.fatura])) || faturaMesPara(kc, l.data);
+          const fm = mesFat; totalFat += (tipo==='despesa'?1:-1)*Math.abs(l.v);
           out.push(['transacoes', newId(), {tipo, valor:Math.abs(l.v), data:l.data, descricao:l.desc, categoriaId: await catDe(l.cat, tipo), contaId:null, cartaoId:kc.id, faturaMes:fm, pago:true, origem:'import', lote, criadoEm:agora}]); ok++;
         }
+        if (paga){ const vp = parseNum($('#pgValor',m).value) || Math.round(totalFat*100)/100;
+          out.push(['transacoes', newId(), {tipo:'pagamento_fatura', valor:vp, data:$('#pgData',m).value, contaId:$('#pgConta',m).value, cartaoId:kc.id, faturaMes:mesFat, descricao:`Fatura ${kc.nome}`, pago:true, origem:'import', lote, criadoEm:agora}]); pgtos++; }
       } else {
         const sinal=$('#sinal',m).value; let ctaPad=$('#ctaPad',m).value;
         if (ctaPad==='__nova'){ ctaPad=newId(); await put('contas', ctaPad, {nome:'Importada', tipo:'corrente', moeda:'BRL', saldoInicial:0, cor:'#64748b'}); }
