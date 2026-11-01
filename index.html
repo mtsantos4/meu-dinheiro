@@ -224,6 +224,11 @@ async function putMany(items){ // [[col,id,data],...]
   [...new Set(items.map(i=>i[0]))].forEach(rebuild); scheduleRender();
   for (let i=0;i<items.length;i+=400){ try { await store.putMany(items.slice(i,i+400).map(([c,id,d])=>{ const cl=JSON.parse(JSON.stringify(d)); delete cl.id; return [c,id,cl]; })); } catch(e){ handleWriteErr(e); throw e; } }
 }
+async function delMany(col, ids){
+  if (!store || !ids.length) return;
+  ids.forEach(id=>delete U[col][id]); rebuild(col); scheduleRender();
+  try { if (store.delMany) await store.delMany(col, ids); else for (const id of ids) await store.del(col,id); } catch(e){ handleWriteErr(e); throw e; }
+}
 async function patch(col, id, data){ const cur = U[col][id] || D[col][id] || {}; return put(col, id, {...cur, ...data}); }
 async function del(col, id){
   if (!store) return;
@@ -255,6 +260,7 @@ function supabaseStore(){
     async put(col,id,data){ const {error}=await sb.from('docs').upsert({user_id:userId,col,id,data},{onConflict:'user_id,col,id'}); if(error) throw error; },
     async putMany(items){ const {error}=await sb.from('docs').upsert(items.map(([col,id,data])=>({user_id:userId,col,id,data})),{onConflict:'user_id,col,id'}); if(error) throw error; },
     async del(col,id){ const {error}=await sb.from('docs').delete().eq('user_id',userId).eq('col',col).eq('id',id); if(error) throw error; },
+    async delMany(col,ids){ for (let i=0;i<ids.length;i+=200){ const {error}=await sb.from('docs').delete().eq('user_id',userId).eq('col',col).in('id',ids.slice(i,i+200)); if(error) throw error; } },
     subscribe(onDoc, onMerc){
       const ch = sb.channel('sync-'+userId)
         .on('postgres_changes',{event:'*',schema:'public',table:'docs',filter:'user_id=eq.'+userId}, p => onDoc(p.eventType, p.eventType==='DELETE'?p.old:p.new))
@@ -573,6 +579,7 @@ const ACTS = {
   conferirTodos: async ()=>{ for (const t of txAtivas().filter(t=>t.conferir)) await patch('transacoes', t.id, {conferir:false}); toast('Tudo conferido'); },
   editCat: id=>abrirCategoria(id), novaCat: ()=>abrirCategoria(),
   editProv: id=>abrirProvento(id), novoProv: ()=>abrirProvento(), precoManual: id=>abrirPreco(id),
+  desfazerImport: async id => { const ids=list('transacoes').filter(t=>t.lote===id).map(t=>t.id); if(!(await confirmar(`Apagar os ${ids.length} lançamentos desta importação? Contas e categorias criadas por ela continuam; você pode excluí-las depois se ficarem vazias.`,'Apagar'))) return; toast('Apagando…'); await delMany('transacoes', ids); toast(`${ids.length} lançamentos apagados`); },
   toggleArq: ()=>{ ui.verArquivadas=!ui.verArquivadas; render(); }, salvarCfg: salvarCfg, sair: ()=>sair(), mudarNome: ()=>pedirNome(), atualizarMercado: ()=>dispararAtualizacao(), importar: abrirImport, backup: copiarBackup, restaurar: abrirRestaurar,
   goContas: ()=>go('contas'), goCarteira: ()=>go('carteira'), goTx: ()=>go('transacoes'),
   togglePago: async id=>{ const t=D.transacoes[id]; await patch('transacoes', id, {pago:!t.pago}); }
@@ -772,6 +779,9 @@ function vAjustes(){
       <h3 class="mt">Atualização automática</h3><div class="hint">Última execução: ${c.ultimaAtualizacao? new Date(c.ultimaAtualizacao).toLocaleString('pt-BR'):'ainda não rodou'}${c.ultimaAtualizacaoObs?' · '+esc(c.ultimaAtualizacaoObs):''}</div>`;
   } else if (tab==='dados'){
     body = `<h3>Importar do Mobills</h3><div class="hint" style="margin-bottom:10px">No Mobills, exporte as transações (o arquivo do Excel serve direto). Aqui você escolhe qual coluna é a data, a descrição, o valor, a categoria e a conta. Contas e categorias que não existirem são criadas.</div><button class="btn pri" data-act="importar">Importar planilha</button>
+      ${(()=>{ const lotes={}; list('transacoes').forEach(t=>{ if(t.lote){ const l=lotes[t.lote]=lotes[t.lote]||{n:0,em:t.criadoEm||'',min:t.data,max:t.data}; l.n++; if(t.data<l.min)l.min=t.data; if(t.data>l.max)l.max=t.data; } });
+        const ls=Object.entries(lotes).sort((a,b)=>b[1].em.localeCompare(a[1].em));
+        return ls.length? `<h3 class="mt">Importações feitas</h3>`+ls.map(([id,l])=>`<div class="acct" style="padding:8px 4px"><div style="flex:1"><div class="nm">${l.n} lançamentos</div><div class="hint">importados em ${l.em?new Date(l.em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'—'} · de ${fmtData(l.min)} a ${fmtData(l.max)}</div></div><button class="btn sm danger" data-act="desfazerImport" data-id="${id}">Desfazer</button></div>`).join('') : ''; })()}
       <h3 class="mt">Cópia de segurança</h3><div class="hint" style="margin-bottom:10px">Copia todos os seus dados em formato JSON. Cole num arquivo de texto e guarde.</div><div class="row"><button class="btn" data-act="backup">Copiar backup</button><button class="btn" data-act="restaurar">Restaurar de um backup</button></div>
       <div class="hint mt">${COLS.map(k=>`${k}: ${list(k).length}`).join(' · ')}</div>`;
   }
