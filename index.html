@@ -856,16 +856,21 @@ function abrirTransacao(id){
   if (t.tipo==='ajuste') return abrirAjuste(id);
   const contas = list('contas').filter(c=>!c.arquivada || c.id===t.contaId);
   const meio = t.cartaoId ? 'c:'+t.cartaoId : 'a:'+(t.contaId||'');
-  const st = {tipo:t.tipo};
+  const ehCartao = !!t.cartaoId && (t.tipo==='despesa'||t.tipo==='receita');
+  const st = {tipo:t.tipo, aba: ehCartao ? 'cartao' : t.tipo, ctipo: ehCartao ? t.tipo : 'despesa'};
+  const optContas = sel => contas.map(c=>`<option value="a:${c.id}" ${sel==='a:'+c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+  const optCartoes = sel => list('cartoes').map(c=>`<option value="c:${c.id}" ${sel==='c:'+c.id?'selected':''}>${esc(c.nome)}</option>`).join('');
+  const ultimoCartao = () => { const u=txAtivas().filter(x=>x.cartaoId && D.cartoes[x.cartaoId]).sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||''))[0]; return u? 'c:'+u.cartaoId : (list('cartoes')[0]? 'c:'+list('cartoes')[0].id : ''); };
   const html = `<h2>${id?'Editar lançamento':'Novo lançamento'}</h2>
-  ${['despesa','receita','transferencia'].includes(t.tipo)||!id ? `<div class="seg" id="segTipo" style="margin-bottom:14px">${[['despesa','Despesa'],['receita','Receita'],['transferencia','Transferência']].map(([v,n])=>`<button type="button" data-v="${v}" class="${t.tipo===v?'on':''}">${n}</button>`).join('')}</div>`:`<div class="pill" style="margin-bottom:12px">${t.tipo==='pagamento_fatura'?'Pagamento de fatura':t.tipo}</div>`}
+  ${['despesa','receita','transferencia'].includes(t.tipo)||!id ? `<div class="seg" id="segTipo" style="margin-bottom:10px">${[['despesa','Despesa'],['receita','Receita'],['transferencia','Transferência'],['cartao','💳 Cartão']].map(([v,n])=>`<button type="button" data-v="${v}" class="${st.aba===v?'on':''}">${n}</button>`).join('')}</div>
+    <div class="seg" id="segCart" style="margin-bottom:14px;display:${st.aba==='cartao'?'flex':'none'}">${[['despesa','Compra'],['receita','Estorno / crédito']].map(([v,n])=>`<button type="button" data-v="${v}" class="${st.ctipo===v?'on':''}">${n}</button>`).join('')}</div>`:`<div class="pill" style="margin-bottom:12px">${t.tipo==='pagamento_fatura'?'Pagamento de fatura':t.tipo}</div>`}
   <form class="frm" id="ftx">
     <label class="full">Valor<input name="valor" inputmode="decimal" required value="${t.valor!=null?fmtN(+t.valor,2):''}" placeholder="0,00" style="font-size:20px;font-weight:600"></label>
     <label class="full">Descrição<input name="descricao" value="${esc(t.descricao||'')}" placeholder="Ex.: Mercado, Salário…" list="dlDesc" autocomplete="off"></label>
     <datalist id="dlDesc">${[...new Set(txAtivas().map(x=>x.descricao).filter(Boolean))].slice(-200).map(d=>`<option value="${esc(d)}">`).join('')}</datalist>
     <label>Data<input name="data" type="date" required value="${t.data}"></label>
     <label class="f-cat">Categoria<select name="categoriaId"></select></label>
-    <label class="f-meio">${'Conta / cartão'}<select name="meio">${contas.map(c=>`<option value="a:${c.id}" ${meio==='a:'+c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}${list('cartoes').map(c=>`<option value="c:${c.id}" ${meio==='c:'+c.id?'selected':''}>💳 ${esc(c.nome)}</option>`).join('')}</select></label>
+    <label class="f-meio"><span id="lblMeio">${st.aba==='cartao'?'Cartão':'Conta'}</span><select name="meio">${st.aba==='cartao'? optCartoes(meio) : optContas(meio)}</select></label>
     <label class="f-dest" style="display:none">Para a conta<select name="contaDestinoId">${contas.map(c=>`<option value="${c.id}" ${t.contaDestinoId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}</select></label>
     <div class="full f-fx" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px">
       <div class="hint" style="margin-bottom:8px;font-weight:600" id="fxTit">Conversão de moeda</div>
@@ -887,6 +892,7 @@ function abrirTransacao(id){
   modal(html, (m, close) => {
     const F = $('#ftx',m);
     const refresh = () => {
+      st.tipo = st.aba==='cartao' ? st.ctipo : (t.tipo==='pagamento_fatura' ? 'pagamento_fatura' : st.aba);
       const tp = st.tipo, mv = F.meio.value, isCard = mv.startsWith('c:');
       $('.f-cat',m).style.display = (tp==='transferencia'||tp==='pagamento_fatura')?'none':'';
       $('.f-dest',m).style.display = tp==='transferencia'?'':'none';
@@ -904,11 +910,17 @@ function abrirTransacao(id){
       $('.f-pago',m).style.display = isCard ? 'none':'';
       $('.f-rep',m).style.display = (tp==='transferencia'||id)?'none':'';
       $('.f-n',m).style.display = F.rep.value && !id ? '':'none';
-      if (tp==='transferencia'){ F.meio.querySelectorAll('option[value^="c:"]').forEach(o=>o.hidden=true); if(isCard) F.meio.value=F.meio.querySelector('option[value^="a:"]')?.value||''; } else F.meio.querySelectorAll('option').forEach(o=>o.hidden=false);
       const cur = F.categoriaId.value || t.categoriaId; F.categoriaId.innerHTML = catOptions(cur, tp==='receita'?'receita':'despesa');
       if (isCard && !F.faturaMes.dataset.touched){ const k=D.cartoes[mv.slice(2)]; if(k) F.faturaMes.value = (id && t.cartaoId===k.id && t.faturaMes) ? t.faturaMes : faturaMesPara(k, F.data.value||todayISO()); }
     };
-    m.querySelectorAll('#segTipo button').forEach(b=>b.onclick=()=>{ st.tipo=b.dataset.v; m.querySelectorAll('#segTipo button').forEach(x=>x.classList.toggle('on',x===b)); F.categoriaId.value=''; refresh(); });
+    m.querySelectorAll('#segTipo button').forEach(b=>b.onclick=()=>{ const antes=st.aba; st.aba=b.dataset.v; m.querySelectorAll('#segTipo button').forEach(x=>x.classList.toggle('on',x===b));
+      $('#segCart',m).style.display = st.aba==='cartao'?'flex':'none';
+      if ((antes==='cartao') !== (st.aba==='cartao')){
+        if (st.aba==='cartao'){ if(!list('cartoes').length){ toast('Cadastre um cartão em Contas e cartões'); } F.meio.innerHTML = optCartoes(t.cartaoId?'c:'+t.cartaoId:ultimoCartao()); $('#lblMeio',m).textContent='Cartão'; F.faturaMes.dataset.touched=''; }
+        else { F.meio.innerHTML = optContas('a:'+(t.contaId||(contas[0]||{}).id)); $('#lblMeio',m).textContent='Conta'; }
+      }
+      F.categoriaId.value=''; refresh(); });
+    m.querySelectorAll('#segCart button').forEach(b=>b.onclick=()=>{ st.ctipo=b.dataset.v; m.querySelectorAll('#segCart button').forEach(x=>x.classList.toggle('on',x===b)); F.categoriaId.value=''; refresh(); });
     F.meio.onchange = refresh; F.rep.onchange = refresh; F.contaDestinoId.onchange = refresh;
     ['valor','cambio','taxa'].forEach(n=>F[n].addEventListener('input', refresh));
     F.valorDestino.addEventListener('input', ()=>{ F.valorDestino.dataset.touched='1'; refresh(); });
@@ -920,7 +932,7 @@ function abrirTransacao(id){
       const valor = Math.abs(parseNum(F.valor.value)); if (!valor){ F.valor.focus(); toast('Informe o valor'); return; }
       if (!F.data.value){ toast('Informe a data'); return; }
       const mv = F.meio.value; const isCard = mv.startsWith('c:');
-      if (!mv){ toast('Cadastre uma conta primeiro'); return; }
+      if (!mv){ toast(st.aba==='cartao'?'Cadastre um cartão primeiro':'Cadastre uma conta primeiro'); return; }
       const base = {...t}; delete base.id;
       Object.assign(base, {tipo:st.tipo, valor, descricao:F.descricao.value.trim(), data:F.data.value, obs:F.obs.value.trim(), origem: base.origem||'manual'});
       if (st.tipo!=='pagamento_fatura'){ base.contaId = isCard? null : mv.slice(2); base.cartaoId = isCard? mv.slice(2) : null; }
