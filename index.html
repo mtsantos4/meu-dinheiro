@@ -959,13 +959,16 @@ function abrirConta(id){
     <label class="full">Nome<input name="nome" required value="${esc(c.nome||'')}" placeholder="Ex.: Itaú, Avenue, Nubank"></label>
     <label>Tipo<select name="tipo">${Object.entries(TIPOS_CONTA).map(([k,v])=>`<option value="${k}" ${c.tipo===k?'selected':''}>${v}</option>`).join('')}</select></label>
     <label>Moeda<select name="moeda"><option value="BRL" ${c.moeda!=='USD'?'selected':''}>Real (R$)</option><option value="USD" ${c.moeda==='USD'?'selected':''}>Dólar (US$)</option></select></label>
-    ${id? `<label class="full">Saldo de hoje (o que aparece no banco)<input name="saldoHoje" inputmode="decimal" value="${fmtN(saldoConta(id),2)}" style="font-weight:600"></label>
-    <div class="full hint">Se o saldo do app não bater com o do banco, digite aqui o saldo real de hoje. O app ajusta o saldo inicial e mantém todo o histórico de lançamentos.</div>`
+    ${id? `<label>Saldo inicial<input name="saldoInicial" inputmode="decimal" value="${fmtN(+c.saldoInicial||0,2)}"></label>
+    <label>Saldo de hoje<input name="saldoHoje" inputmode="decimal" value="${fmtN(saldoConta(id),2)}" style="font-weight:600"></label>
+    <div class="full hint">Mude o que for mais fácil, o outro se ajusta sozinho. <b>Saldo inicial</b>: o saldo antes do primeiro lançamento (o mesmo informado no Mobills quando criou a conta). <b>Saldo de hoje</b>: digite o saldo que o banco mostra hoje. Os lançamentos não mudam. Lançamentos até hoje nesta conta somam ${money(saldoConta(id)-(+c.saldoInicial||0), c.moeda)}.</div>`
     : `<label class="full">Saldo inicial<input name="saldoHoje" inputmode="decimal" value="0,00"></label><div class="full hint">O saldo da conta antes do primeiro lançamento que você vai registrar ou importar. Se for importar o histórico do Mobills, use o saldo inicial que a conta tinha lá. Depois, dá para conferir e ajustar pelo saldo de hoje.</div>`}
     <div class="full"><div class="hint" style="margin-bottom:6px">Cor</div>${corPicker(cor)}</div>
     ${id?`<label class="chk full"><input type="checkbox" name="arquivada" ${c.arquivada?'checked':''}> Ocultar conta (não uso mais; some das listas e mantém o histórico)</label>`:''}
   </form><div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
     bindCor(m,()=>cor,v=>cor=v);
+    const movAteHoje = id ? saldoConta(id) - (+c.saldoInicial||0) : 0; const FF=$('#fc',m);
+    if (FF.saldoInicial){ FF.saldoInicial.addEventListener('input',()=>{ FF.saldoHoje.value=fmtN(parseNum(FF.saldoInicial.value)+movAteHoje,2); }); FF.saldoHoje.addEventListener('input',()=>{ FF.saldoInicial.value=fmtN(parseNum(FF.saldoHoje.value)-movAteHoje,2); }); }
     $('#ok',m).onclick = async () => { const F=$('#fc',m); if(!F.nome.value.trim()) return F.nome.focus();
       const hoje = parseNum(F.saldoHoje.value);
       const movimentos = id ? saldoConta(id) - (+c.saldoInicial||0) : 0;   // efeito dos lançamentos até hoje
