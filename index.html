@@ -844,7 +844,9 @@ function mascara(el, moedaFn, permiteNeg){
   if (el.value.trim()!=='') el.value = fmt(Math.round(parseNum(el.value)*100)); else el.value = fmt(0);
   el.addEventListener('keydown', e => { if (e.key==='-' || e.key==='Subtract'){ e.preventDefault(); if (permiteNeg){ el.value = fmt(-centavos()); fim(); el.dispatchEvent(new Event('input',{bubbles:true})); } } });
   el.addEventListener('input', () => { const neg = permiteNeg && el.value.includes('-'); const d=el.value.replace(/\D/g,''); const c=parseInt(d||'0',10)*(neg?-1:1); el.value = fmt(c); fim(); });
-  el.addEventListener('focus', () => setTimeout(fim, 0)); el.addEventListener('click', fim);
+  // ao entrar no campo, seleciona tudo: o primeiro número digitado substitui o valor (depois os números vão entrando pela direita)
+  let acabouFoco=false; el.addEventListener('focus', () => { acabouFoco=true; try{ el.select(); }catch(e){} });
+  el.addEventListener('mouseup', e => { if (acabouFoco){ e.preventDefault(); acabouFoco=false; } }); el.addEventListener('touchend', () => { if (acabouFoco){ setTimeout(()=>{ try{ el.select(); }catch(e){} },0); acabouFoco=false; } });
   const api = { prefixo(m){ pf.textContent = (m||(moedaFn&&moedaFn())||'BRL')==='USD' ? 'US$' : 'R$'; } };
   api.prefixo(); return api;
 }
