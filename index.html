@@ -583,7 +583,7 @@ const ACTS = {
   conferirTodos: async ()=>{ for (const t of txAtivas().filter(t=>t.conferir)) await patch('transacoes', t.id, {conferir:false}); toast('Tudo conferido'); },
   editCat: id=>abrirCategoria(id), novaCat: ()=>abrirCategoria(),
   editProv: id=>abrirProvento(id), novoProv: ()=>abrirProvento(), precoManual: id=>abrirPreco(id),
-  conciliar: ()=>abrirConciliar(),
+  conciliar: ()=>abrirConciliar(), comp: id=>abrirComposicao(id),
   desfazerImport: async id => { const ids=list('transacoes').filter(t=>t.lote===id).map(t=>t.id); const mov=list('transacoes').filter(t=>t.conciliacao===id);
     if(!(await confirmar(mov.length? `Desfazer esta conciliação? ${mov.length} compras voltam para as contas de origem e ${ids.length} lançamentos criados por ela são apagados.` : `Apagar os ${ids.length} lançamentos desta importação? Contas e categorias criadas por ela continuam; você pode excluí-las depois se ficarem vazias.`, mov.length?'Desfazer':'Apagar'))) return;
     toast('Desfazendo…');
@@ -624,7 +624,7 @@ function vInicio(){
   <div class="grid g3 mt">
     <div class="card"><h3>Patrimônio<div class="sp"></div><span class="muted" style="font-weight:500">${money(saldo+cart.total)}</span></h3>
       ${(()=>{ const vis=contas.map(ct=>({ct,s:saldoConta(ct.id)})).filter(x=>Math.abs(x.s)>=0.005).sort((a,b)=>toBRL(b.s,b.ct.moeda)-toBRL(a.s,a.ct.moeda)); const oc=contas.length-vis.length;
-        return (vis.map(({ct,s})=>`<div class="row" style="padding:6px 0"><span class="dot" style="background:${ct.cor||'#94a3b8'}"></span><span style="flex:1">${esc(ct.nome)}</span><span class="num">${money(s, ct.moeda)}</span></div>`).join('') || '<div class="hint">Nenhuma conta com saldo</div>') + (oc? `<div class="hint" style="padding:2px 0 4px">${oc} conta${oc>1?'s':''} zerada${oc>1?'s':''} oculta${oc>1?'s':''}</div>`:''); })()}
+        return (vis.map(({ct,s})=>`<div class="row" style="padding:6px 0;cursor:pointer" data-act="comp" data-id="${ct.id}" title="Ver composição do saldo"><span class="dot" style="background:${ct.cor||'#94a3b8'}"></span><span style="flex:1">${esc(ct.nome)}</span><span class="num">${money(s, ct.moeda)}</span></div>`).join('') || '<div class="hint">Nenhuma conta com saldo</div>') + (oc? `<div class="hint" style="padding:2px 0 4px">${oc} conta${oc>1?'s':''} zerada${oc>1?'s':''} oculta${oc>1?'s':''}</div>`:''); })()}
       <div class="row" style="padding:6px 0;border-top:1px solid var(--line);margin-top:4px"><span class="dot" style="background:var(--acc)"></span><span style="flex:1">Investimentos</span><span class="num">${money(cart.total)}</span></div>
     </div>
     <div class="card"><h3>Cartões · fatura de ${mesCurto(ym)}</h3>
@@ -715,7 +715,7 @@ function vContas(){
   <header class="top"><h1>Contas e cartões</h1><div class="sp"></div>${monthNav()}</header>
   <div class="grid g2">
   <div class="card"><h3>Contas<div class="sp"></div><button class="btn sm" data-act="novaConta">+ Conta</button></h3>
-    ${contas.map(c=>{ const s=saldoConta(c.id), p=saldoConta(c.id,{previsto:true,ate:`${ym}-31`}); return `<div class="acct" style="cursor:pointer;${c.arquivada?'opacity:.55':''}" data-act="editConta" data-id="${c.id}"><span class="dot" style="background:${c.cor||'#94a3b8'};width:12px;height:12px"></span><div style="flex:1;min-width:0"><div class="nm">${esc(c.nome)} ${c.moeda==='USD'?'<span class="pill">USD</span>':''}</div><div class="hint">${TIPOS_CONTA[c.tipo]||''}${c.arquivada?' · arquivada':''}</div></div><div class="num"><div style="font-weight:600" title="Saldo de hoje">${money(s,c.moeda)}</div><div class="hint">previsto fim de ${mesCurto(ym)}: ${money(p,c.moeda)}</div></div></div>`; }).join('') || '<div class="empty">Cadastre sua primeira conta</div>'}
+    ${contas.map(c=>{ const s=saldoConta(c.id), p=saldoConta(c.id,{previsto:true,ate:`${ym}-31`}); return `<div class="acct" style="cursor:pointer;${c.arquivada?'opacity:.55':''}" data-act="editConta" data-id="${c.id}"><span class="dot" style="background:${c.cor||'#94a3b8'};width:12px;height:12px"></span><div style="flex:1;min-width:0"><div class="nm">${esc(c.nome)} ${c.moeda==='USD'?'<span class="pill">USD</span>':''}</div><div class="hint">${TIPOS_CONTA[c.tipo]||''}${c.arquivada?' · arquivada':''}</div></div><button class="btn sm ghost" data-act="comp" data-id="${c.id}" title="Composição do saldo">Σ</button><div class="num"><div style="font-weight:600" title="Saldo de hoje">${money(s,c.moeda)}</div><div class="hint">previsto fim de ${mesCurto(ym)}: ${money(p,c.moeda)}</div></div></div>`; }).join('') || '<div class="empty">Cadastre sua primeira conta</div>'}
     ${nArq? `<button class="btn ghost sm mt" data-act="toggleArq">${ui.verArquivadas?'Esconder':'Mostrar'} ${nArq} conta${nArq>1?'s':''} arquivada${nArq>1?'s':''}</button>`:''}
   </div>
   <div class="card"><h3>Cartões de crédito · faturas de ${mesCurto(ym)}<div class="sp"></div><button class="btn sm" data-act="novoCartao">+ Cartão</button></h3>
@@ -939,6 +939,41 @@ function abrirTransacao(id){
   });
 }
 
+function composicaoSaldo(id){
+  const c=D.contas[id]; const hoje=todayISO(); const L={}; const add=(k,v,t)=>{ const x=L[k]=L[k]||{v:0,n:0,itens:[]}; x.v+=v; x.n++; x.itens.push(t); };
+  let futuros=0, nFut=0, naoPagos=0, nNP=0, cartao=0, nCart=0;
+  for (const t of txAtivas()){
+    const v=+t.valor||0; const envolve = t.contaId===id || t.contaDestinoId===id; if(!envolve) continue;
+    if (t.cartaoId && (t.tipo==='despesa'||t.tipo==='receita')){ cartao+=v; nCart++; continue; }
+    if (t.data>hoje){ futuros+=v; nFut++; continue; }
+    if (!t.pago){ naoPagos+=v; nNP++; continue; }
+    if (t.tipo==='transferencia'){ if (t.contaId===id) add('Transferências enviadas', -v, t); if (t.contaDestinoId===id) add('Transferências recebidas', +(t.valorDestino!=null?+t.valorDestino:v), t); continue; }
+    if (t.contaId!==id) continue;
+    if (t.tipo==='receita') add(ehInvest(t)?'Resgates (categoria de investimento)':'Receitas', v, t);
+    else if (t.tipo==='despesa') add(ehInvest(t)?'Investimentos (categoria de investimento)':'Despesas', -v, t);
+    else if (t.tipo==='pagamento_fatura') add('Pagamentos de fatura', -v, t);
+    else if (t.tipo==='aplicacao') add('Aplicações (compras de ativos)', -v, t);
+    else if (t.tipo==='resgate') add('Resgates (vendas de ativos)', v, t);
+    else if (t.tipo==='ajuste') add('Ajustes de saldo', v, t);
+  }
+  return {inicial:+c.saldoInicial||0, linhas:L, futuros, nFut, naoPagos, nNP, saldo:saldoConta(id)};
+}
+function abrirComposicao(id){
+  const c=D.contas[id], mo=c.moeda||'BRL', r=composicaoSaldo(id);
+  const linhas=Object.entries(r.linhas).sort((a,b)=>a[1].v-b[1].v);
+  const maiores = Object.values(r.linhas).flatMap(x=>x.itens).filter(t=>t.contaId===id && t.tipo!=='transferencia').sort((a,b)=>(+b.valor)-(+a.valor)).slice(0,8);
+  modal(`<h2>Composição do saldo · ${esc(c.nome)}</h2>
+    <table><tbody>
+      <tr><td>Saldo inicial</td><td class="num">${money(r.inicial,mo)}</td></tr>
+      ${linhas.map(([k,x])=>`<tr><td>${k} <span class="hint">(${x.n})</span></td><td class="num ${x.v<0?'neg':'pos'}">${x.v<0?'−':'+'}${money(Math.abs(x.v),mo)}</td></tr>`).join('')}
+      <tr><td><b>Saldo de hoje</b></td><td class="num"><b>${money(r.saldo,mo)}</b></td></tr>
+    </tbody></table>
+    ${r.nFut||r.nNP?`<div class="hint" style="margin-top:8px">Fora da conta: ${r.nFut?`${r.nFut} lançamentos com data futura (${money(r.futuros,mo)})`:''}${r.nFut&&r.nNP?' · ':''}${r.nNP?`${r.nNP} marcados como não pagos (${money(r.naoPagos,mo)})`:''}.</div>`:''}
+    ${maiores.length?`<h3 class="mt">Maiores lançamentos</h3>${maiores.map(t=>`<div class="row" style="padding:4px 0;font-size:13px"><span style="flex:1">${fmtData(t.data)} · ${esc(t.descricao||catNome(t.categoriaId))} <span class="hint">${esc(catNome(t.categoriaId))}</span></span><span class="num">${money(+t.valor,mo)}</span></div>`).join('')}`:''}
+    <div class="mfoot"><button class="btn" id="verTx">Ver lançamentos da conta</button><div class="sp"></div><button class="btn pri" data-close>Fechar</button></div>`,(m,close)=>{
+    $('#verTx',m).onclick=()=>{ close(); ui.f={conta:'a:'+id,cat:'',tipo:'',q:''}; ui.faturaVer=null; go('transacoes'); };
+  });
+}
 function abrirAjuste(id){
   const t=D.transacoes[id]; const mo=(D.contas[t.contaId]||{}).moeda||'BRL';
   modal(`<h2>Ajuste de saldo · ${esc(contaNome(t.contaId))}</h2><form class="frm" id="faj">
@@ -980,11 +1015,12 @@ function abrirConta(id){
     <div class="full hint"><b>Saldo inicial</b>: o saldo antes do primeiro lançamento (o mesmo informado no Mobills quando criou a conta). Mudar aqui recalcula todo o histórico.<br><b>Saldo de hoje</b>: digite o saldo que o banco mostra hoje. O app cria um lançamento "Ajuste de saldo" com a diferença, na data de hoje, que você vê e pode excluir em Transações.<br>Lançamentos até hoje nesta conta somam ${money(saldoConta(id)-(+c.saldoInicial||0), c.moeda)}.</div>`
     : `<label class="full">Saldo inicial<input name="saldoHoje" inputmode="decimal" value="0,00"></label><div class="full hint">O saldo da conta antes do primeiro lançamento que você vai registrar ou importar. Se for importar o histórico do Mobills, use o saldo inicial que a conta tinha lá. Depois, dá para conferir e ajustar pelo saldo de hoje.</div>`}
     <div class="full"><div class="hint" style="margin-bottom:6px">Cor</div>${corPicker(cor)}</div>
+    ${id?`<div class="full"><button type="button" class="btn sm" id="btComp">Ver composição do saldo</button></div>`:''}
     ${id?`<label class="chk full"><input type="checkbox" name="arquivada" ${c.arquivada?'checked':''}> Ocultar conta (não uso mais; some das listas e mantém o histórico)</label>`:''}
   </form><div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
     bindCor(m,()=>cor,v=>cor=v);
     const movAteHoje = id ? saldoConta(id) - (+c.saldoInicial||0) : 0; const FF=$('#fc',m);
-    let editou = null;
+    let editou = null; if ($('#btComp',m)) $('#btComp',m).onclick=()=>{ close(); abrirComposicao(id); };
     if (FF.saldoInicial){ FF.saldoInicial.addEventListener('input',()=>{ editou='inicial'; FF.saldoHoje.value=fmtN(parseNum(FF.saldoInicial.value)+movAteHoje,2); }); FF.saldoHoje.addEventListener('input',()=>{ editou='hoje'; FF.saldoInicial.value=fmtN(+c.saldoInicial||0,2); }); }
     $('#ok',m).onclick = async () => { const F=$('#fc',m); if(!F.nome.value.trim()) return F.nome.focus();
       const d={nome:F.nome.value.trim(), tipo:F.tipo.value, moeda:F.moeda.value, saldoInicial: id ? (editou==='inicial' ? parseNum(F.saldoInicial.value) : (+c.saldoInicial||0)) : parseNum(F.saldoHoje.value), cor, arquivada: F.arquivada? F.arquivada.checked:false};
