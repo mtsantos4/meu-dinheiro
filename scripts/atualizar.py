@@ -193,6 +193,50 @@ def historico_ativo(t, classe, moeda, usd_hist):
     h, cur = yahoo_mensal(yahoo_symbol(t, classe, moeda))
     return h, ("USD" if cur == "USD" else "BRL")
 
+# ---------------- Setor / segmento ----------------
+def http_texto(url, timeout=25):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "text/html,*/*"}), timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace")
+
+def setor_b3(ticker):
+    raiz = re.match(r"[A-Z0-9]{4}", ticker).group(0)
+    base = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/"
+    lst = http_json(base + "GetInitialCompanies/" + b3_b64({"language": "pt-br", "pageNumber": 1, "pageSize": 20, "company": raiz}))
+    emp = next((x for x in (lst or {}).get("results", []) if x.get("issuingCompany") == raiz), None)
+    if not emp:
+        raise RuntimeError("empresa não encontrada na B3")
+    det = http_json(base + "GetDetail/" + b3_b64({"codeCVM": emp["codeCVM"], "language": "pt-br"}))
+    partes = [p.strip() for p in (det.get("industryClassification") or emp.get("segment") or "").split("/") if p.strip()]
+    return {"setor": partes[0] if partes else None, "subsetor": partes[1] if len(partes) > 1 else None,
+            "segmento": partes[2] if len(partes) > 2 else (emp.get("segment") or None), "nome": det.get("companyName"), "fonte": "B3"}
+
+def setor_fii(ticker):
+    t = http_texto(f"https://www.fundsexplorer.com.br/funds/{ticker.lower()}")
+    seg = re.search(r'"segmento_atuacao"\s*:\s*"([^"]+)"', t)
+    anb = re.search(r'"segmento_ambima"\s*:\s*"([^"]+)"', t)
+    if not seg and not anb:
+        raise RuntimeError("segmento não encontrado")
+    return {"setor": "Fundos imobiliários", "segmento": seg.group(1) if seg else None, "segmentoAnbima": anb.group(1) if anb else None, "fonte": "Funds Explorer"}
+
+def setores_faltando(url, key, ativos, teste):
+    ja = set()
+    if not teste:
+        try:
+            ja = {r["id"] for r in (http_json(f"{url}/rest/v1/mercado_docs?col=eq.setores&select=id", headers=sb_headers(key)) or [])}
+        except Exception:
+            pass
+    out = []
+    for a in ativos:
+        if a["classe"] not in ("acao", "fii", "bdr") or safe_id(a["ticker"]) in ja:
+            continue
+        try:
+            d = setor_fii(a["ticker"]) if a["classe"] == "fii" else setor_b3(a["ticker"])
+            out.append({"col": "setores", "id": safe_id(a["ticker"]), "data": {"ticker": a["ticker"], **d}})
+        except Exception as e:
+            log(f"  setor {a['ticker']}: {e}")
+        time.sleep(0.3)
+    return out
+
 # ---------------- Status Invest ----------------
 SI_PATH = {"acao": "acao", "fii": "fii", "bdr": "bdr", "etf": "etf"}
 
@@ -435,6 +479,10 @@ def main():
             log(f"  histórico {a['ticker']}: {e}")
         time.sleep(0.25)
     log(f"Históricos mensais: {n_hist}/{len(ativos)}")
+
+    novos_set = setores_faltando(url, key, ativos, bool(teste))
+    linhas += novos_set
+    log(f"Setores novos: {len(novos_set)}" + "".join(f"\n  SETOR {l['id']}: {l['data'].get('setor')} / {l['data'].get('subsetor')} / {l['data'].get('segmento')}" for l in novos_set[:12]))
 
     resumo = f"{ok}/{len(ativos)} cotações, {n_prov} proventos" + (f"; sem cotação: {', '.join(erros)}" if erros else "")
     linhas.append({"col": "config", "id": "mercado", "data": {"usdbrl": usd, "atualizadoEm": agora, "resumo": resumo}})
