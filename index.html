@@ -158,7 +158,7 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 .novaversao{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:70;background:var(--acc);color:#fff;border:0;border-radius:99px;padding:11px 18px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:pointer}
 @media (min-width:761px){.novaversao{bottom:24px}}
 .sel{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
-.tfix{table-layout:fixed}@media(max-width:700px){.tfix th,.tfix td{font-size:12.5px;padding-left:4px;padding-right:4px}}.so-m{display:none}.pctpill{display:inline-block;font-weight:600;font-size:12.5px;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent)}@media(max-width:700px){.tpos th:nth-child(4),.tpos td:nth-child(4){display:none}.tpos th:first-child,.tpos td:first-child{width:27%}.tpos th:nth-child(5),.tpos td:nth-child(5){width:27%}.pctpill{font-size:11.5px;padding:1px 5px}}@media(max-width:700px){.so-m{display:block}}.tfix th:first-child,.tfix td:first-child{width:24%}
+.tfix{table-layout:fixed}@media(max-width:700px){.tfix th,.tfix td{font-size:12.5px;padding-left:4px;padding-right:4px}}.so-m{display:none}a.btn{text-decoration:none;color:var(--text);display:inline-flex;align-items:center}.pctpill{display:inline-block;font-weight:600;font-size:12.5px;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent)}@media(max-width:700px){.tpos th:nth-child(4),.tpos td:nth-child(4){display:none}.tpos th:first-child,.tpos td:first-child{width:27%}.tpos th:nth-child(5),.tpos td:nth-child(5){width:27%}.pctpill{font-size:11.5px;padding:1px 5px}}@media(max-width:700px){.so-m{display:block}}.tfix th:first-child,.tfix td:first-child{width:24%}
 .donutwrap{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .donutleg{max-height:220px;overflow:auto}
 .bloco{border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden;background:var(--panel)}
@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102152335';
+const APP_BUILD = '20261102153133';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -474,6 +474,36 @@ function telaNovaSenha(convite){
 function pedirNome(){
   modal(`<h2>Como quer ser chamado?</h2><form class="frm" id="fnome" style="grid-template-columns:1fr"><label>Seu nome<input name="nome" required></label></form><div class="mfoot"><div class="sp"></div><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
     $('#ok',m).onclick = async () => { const n=$('#fnome',m).nome.value.trim(); if(!n) return; const {error}=await sb.auth.updateUser({data:{nome:n}}); if(error) return toast(error.message); userNome=n; close(); render(); };
+  });
+}
+/* ---------- Instalar o app ---------- */
+const URL_WINDOWS = 'https://github.com/mtsantos4/meu-dinheiro/releases/download/desktop-v1.0.0/MeuDinheiro-Instalador-1.0.0.exe';
+const URL_WINDOWS_PORTATIL = 'https://github.com/mtsantos4/meu-dinheiro/releases/download/desktop-v1.0.0/MeuDinheiro-Portatil-1.0.0.exe';
+let promptInstalar = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); promptInstalar = e; });
+window.addEventListener('appinstalled', () => { promptInstalar = null; try{ renderNav(); }catch(e){} });
+function appInstalado(){ return /Electron/i.test(navigator.userAgent) || (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true; }
+function plataforma(){ const u=navigator.userAgent; if (/iPhone|iPad|iPod/i.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints>1)) return 'ios'; if (/Android/i.test(u)) return 'android'; if (/Windows/i.test(u)) return 'windows'; return 'outro'; }
+function abrirInstalar(){
+  const pf = plataforma();
+  const passo = (n, t) => `<div class="row" style="align-items:flex-start;gap:10px;padding:5px 0"><span class="pill acc" style="min-width:22px;text-align:center">${n}</span><span style="flex:1">${t}</span></div>`;
+  const sec = {
+    windows: `<div class="card" style="margin:10px 0"><h3>💻 Windows</h3>
+      <div class="hint" style="margin-bottom:10px">Programa para o computador, com a mesma conta e os mesmos dados.</div>
+      <div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:8px"><a class="btn pri" href="${URL_WINDOWS}" target="_blank" rel="noopener">Baixar instalador</a><a class="btn" href="${URL_WINDOWS_PORTATIL}" target="_blank" rel="noopener">Versão portátil</a></div>
+      ${passo(1,'Abra o arquivo baixado.')}${passo(2,'Se o Windows mostrar “O Windows protegeu o computador”, clique em <b>Mais informações</b> e depois em <b>Executar assim mesmo</b>.')}${passo(3,'Pronto: o Meu Dinheiro aparece no menu Iniciar e na área de trabalho.')}</div>`,
+    android: `<div class="card" style="margin:10px 0"><h3>🤖 Android</h3>
+      ${promptInstalar && pf==='android' ? `<button class="btn pri" id="btPwa" style="margin-bottom:8px">Instalar agora</button>` : ''}
+      ${passo(1,'Abra este site no <b>Chrome</b>.')}${passo(2,'Toque no menu <b>⋮</b> no canto de cima.')}${passo(3,'Toque em <b>Adicionar à tela inicial</b> (ou <b>Instalar app</b>) e confirme.')}${passo(4,'O ícone do Meu Dinheiro aparece junto dos seus apps.')}</div>`,
+    ios: `<div class="card" style="margin:10px 0"><h3>🍎 iPhone e iPad</h3>
+      ${passo(1,'Abra este site no <b>Safari</b>.')}${passo(2,'Toque no botão <b>Compartilhar</b> (o quadrado com a seta para cima), na barra de baixo.')}${passo(3,'Role e toque em <b>Adicionar à Tela de Início</b>.')}${passo(4,'Toque em <b>Adicionar</b>. O app abre em tela cheia, como um aplicativo normal.')}</div>`,
+  };
+  const ordem = pf==='ios' ? ['ios','android','windows'] : pf==='android' ? ['android','ios','windows'] : ['windows','android','ios'];
+  modal(`<h2>Instalar o Meu Dinheiro</h2><div class="hint">Instale no computador e no celular. Tudo fica sincronizado na sua conta.</div>
+    ${promptInstalar && pf!=='android' ? `<button class="btn pri" id="btPwa" style="margin-top:10px">Instalar neste navegador</button>` : ''}
+    ${ordem.map(k=>sec[k]).join('')}
+    <div class="mfoot"><div class="sp"></div><button class="btn" data-close>Fechar</button></div>`, (m, close) => {
+    const b = $('#btPwa', m); if (b) b.onclick = async () => { try{ promptInstalar.prompt(); const r = await promptInstalar.userChoice; if (r && r.outcome==='accepted'){ promptInstalar=null; close(); toast('App instalado'); } }catch(e){} };
   });
 }
 async function sair(){
@@ -791,8 +821,8 @@ const ICONS = {
 const NAMES = {inicio:'Início',transacoes:'Transações',contas:'Contas e cartões',carteira:'Investimentos',ajustes:'Ajustes'};
 const SHORT = {inicio:'Início',transacoes:'Transações',contas:'Contas',carteira:'Carteira',ajustes:'Ajustes'};
 function renderNav(){
-  $('#side').innerHTML = `<div class="brand"><i></i>Meu Dinheiro</div>` + VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${NAMES[v]}</button>`).join('') + `<div class="sidefoot"><div class="sideuser"><b>${esc(userNome||'')}</b><span>${esc(userEmail||'')}</span></div><button class="navbtn" id="btSair"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>Sair</button></div>`;
-  const bs=$('#btSair'); if (bs) bs.onclick=()=>sair();
+  $('#side').innerHTML = `<div class="brand"><i></i>Meu Dinheiro</div>` + VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${NAMES[v]}</button>`).join('') + `<div class="sidefoot">${appInstalado()?'':`<button class="navbtn" id="btInstalar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Instalar o app</button>`}<div class="sideuser"><b>${esc(userNome||'')}</b><span>${esc(userEmail||'')}</span></div><button class="navbtn" id="btSair"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>Sair</button></div>`;
+  const bs=$('#btSair'); if (bs) bs.onclick=()=>sair(); const bi=$('#btInstalar'); if (bi) bi.onclick=()=>abrirInstalar();
   $('#bottom').innerHTML = VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${SHORT[v]}</button>`).join('');
   document.querySelectorAll('.navbtn[data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
 }
@@ -848,7 +878,7 @@ const ACTS = {
     if (mov.length) await putMany(mov.map(t=>{ const a=t.antes||{}; const d={...t}; delete d.conciliacao; delete d.antes; delete d.conciliadoEm; d.contaId=a.contaId||null; d.cartaoId=a.cartaoId||null; d.faturaMes=a.faturaMes||null; d.pago=a.pago!==undefined?a.pago:true; return ['transacoes', t.id, d]; }));
     await delMany('transacoes', ids); toast('Desfeito'); },
   novaFixa: ()=>abrirFixa(), editFixa: id=>abrirFixa(id), irFixas: ()=>{ ui.cfgTab='fixas'; go('ajustes'); },
-  toggleArq: ()=>{ ui.verArquivadas=!ui.verArquivadas; render(); }, salvarCfg: salvarCfg, sair: ()=>sair(), mudarNome: ()=>pedirNome(), atualizarMercado: ()=>dispararAtualizacao(), importar: abrirImport, backup: copiarBackup, restaurar: abrirRestaurar,
+  toggleArq: ()=>{ ui.verArquivadas=!ui.verArquivadas; render(); }, salvarCfg: salvarCfg, sair: ()=>sair(), instalar: ()=>abrirInstalar(), mudarNome: ()=>pedirNome(), atualizarMercado: ()=>dispararAtualizacao(), importar: abrirImport, backup: copiarBackup, restaurar: abrirRestaurar,
   goContas: ()=>go('contas'), goCarteira: ()=>{ ui.cartTab='proventos'; go('carteira'); }, goTx: ()=>go('transacoes'),
   togglePago: async id=>{ const t=D.transacoes[id]; await patch('transacoes', id, {pago:!t.pago}); }
 };
@@ -1408,7 +1438,7 @@ function vAjustes(){
       <h3 class="mt">Cópia de segurança</h3><div class="hint" style="margin-bottom:10px">Copia todos os seus dados em formato JSON. Cole num arquivo de texto e guarde.</div><div class="row"><button class="btn" data-act="backup">Copiar backup</button><button class="btn" data-act="restaurar">Restaurar de um backup</button></div>
       <div class="hint mt">${COLS.map(k=>`${k}: ${list(k).length}`).join(' · ')}</div>`;
   }
-  return `<header class="top"><h1>Ajustes</h1><div class="sp"></div><button class="btn sm so-m" data-act="sair">Sair da conta</button></header>
+  return `<header class="top"><h1>Ajustes</h1><div class="sp"></div>${appInstalado()?'':'<button class="btn sm so-m" data-act="instalar" style="margin-right:6px">Instalar o app</button>'}<button class="btn sm so-m" data-act="sair">Sair da conta</button></header>
   <div class="tabs" style="margin-bottom:14px">${[['fixas','Lançamentos fixos'],['categorias','Categorias'],['geral','Geral'],['dados','Importar e backup']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cfgTab" data-id="${k}">${n}</button>`).join('')}</div>
   <div class="card">${body}</div>`;
 }
