@@ -157,6 +157,8 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 .modal .row input[type=date],.ddpanel input[type=date]{width:auto;flex:1 1 130px}
 .novaversao{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:70;background:var(--acc);color:#fff;border:0;border-radius:99px;padding:11px 18px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:pointer}
 @media (min-width:761px){.novaversao{bottom:24px}}
+.sel{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.rtab td,.rtab th{padding:8px 6px;font-size:13px}
 .loading{padding:60px;text-align:center;color:var(--muted)}
 body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:none!important}
 .login{max-width:400px;margin:10vh auto 0}
@@ -236,7 +238,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102001808';
+const APP_BUILD = '20261102002143';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -255,7 +257,7 @@ const SB_URL = 'https://cocaixvrkipbzfvjzykd.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvY2FpeHZya2lwYnpmdmp6eWtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1MTgyODEsImV4cCI6MjEwOTA5NDI4MX0.sB5TrWysO8Pu0Uf4TFHQx46Qh6o_PFov7dNWu4V2H4I';
 const COLS = ['contas','cartoes','categorias','transacoes','ativos','operacoes','mercado','proventos','config'];
 const D = {}, U = {}; COLS.forEach(c => { D[c] = {}; U[c] = {}; });   // D = visão combinada; U = dados do usuário
-const G = { mercado:{}, proventos:{}, config:{} };                      // dados de mercado (rotina diária)
+const G = { mercado:{}, proventos:{}, config:{}, historico:{}, indices:{} };                      // dados de mercado (rotina diária)
 const loaded = {}; let store = null, sb = null, userId = null, userEmail = '', userNome = '', canWrite = true, dbFail = false, started = null;
 const LINK_TIPO = (location.hash.match(/type=([a-z_]+)/)||[])[1] || ''; let linkTratado = false;
 let atualizando = null; // {desde: ms}
@@ -344,7 +346,7 @@ function aplicarMerc(tipo, row){
   if (!row || !G[row.col]) return;
   if (tipo==='DELETE') delete G[row.col][row.id]; else G[row.col][row.id] = {...(row.data||{}), id:row.id};
   if (row.col==='config' && row.id==='mercado' && atualizando && Date.parse(row.data?.atualizadoEm||0) >= atualizando.desde - 5000){ atualizando=null; toast('Cotações e proventos atualizados'); }
-  rebuild(row.col); scheduleRender(); if (row.col==='proventos') scheduleSync();
+  if (COLS.includes(row.col)) rebuild(row.col); scheduleRender(); if (row.col==='proventos') scheduleSync();
 }
 let unsub=null;
 async function carregarDados(){
@@ -866,6 +868,8 @@ function vCarteira(){
       <h3 style="margin-top:8px">A receber e anunciados</h3>${fut.length?`<div class="tblwrap"><table>${head}<tbody>${fut.map(lin).join('')}</tbody></table></div>`:'<div class="hint" style="padding:8px 0">Nenhum provento anunciado para seus ativos no momento.</div>'}
       <h3 style="margin-top:18px">Recebidos</h3>${pagos.length?`<div class="tblwrap"><table>${head}<tbody>${pagos.map(lin).join('')}</tbody></table></div>`:'<div class="hint" style="padding:8px 0">Nenhum provento recebido registrado ainda.</div>'}
       <div class="hint" style="margin-top:10px">Cotações e proventos são atualizados automaticamente nos dias úteis, às 8h e às 19h. JCP considera IR de ${fmtN(c.irJcp*100,0)}% e ativos em dólar ${fmtN(c.irExterior*100,0)}% retidos na fonte (ajustável em Ajustes).</div>`;
+  } else if (tab==='rentab'){
+    body = vRentabilidade();
   } else if (tab==='cadastro'){
     const todos = list('ativos').map(a=>({...a, pos:posicao(a.ticker), m:D.mercado[safeId(a.ticker)], nOps:opsDo(a.ticker).length})).sort((a,b)=>(a.classe||'').localeCompare(b.classe||'')||a.ticker.localeCompare(b.ticker));
     const grupos = {}; todos.forEach(a=>(grupos[a.classe||'outro']=grupos[a.classe||'outro']||[]).push(a));
@@ -885,12 +889,98 @@ function vCarteira(){
     <div class="card"><div class="lbl">Proventos 12 meses</div><div class="val">${money(rec12)}</div><div class="sub">média ${money(rec12/12)}/mês</div></div>
     <div class="card"><div class="lbl">A receber</div><div class="val">${money(aRec)}</div><div class="sub">${atualizando? 'Buscando cotações e proventos…' : upd? 'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Aguardando 1ª atualização'} · US$ ${fmtN(c.usdbrl,2)}</div></div>
   </div>
-  <div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px;gap:8px"><div class="tabs">${[['ativos','Carteira'],['alocacao','Alocação'],['proventos','Proventos'],['operacoes','Operações'],['cadastro','Ativos cadastrados']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>${tab==='proventos'?'<button class="btn sm" data-act="novoProv">+ Provento manual</button>':''}</div>
+  <div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px;gap:8px"><div class="tabs">${[['ativos','Carteira'],['rentab','Rentabilidade'],['alocacao','Alocação'],['proventos','Proventos'],['operacoes','Operações'],['cadastro','Ativos cadastrados']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>${tab==='proventos'?'<button class="btn sm" data-act="novoProv">+ Provento manual</button>':''}</div>
   </div>
   <div class="card">${body}</div>`;
 }
+/* ============ Rentabilidade (estilo Investidor 10) ============ */
+const ultimoDia = ym => { const [y,m]=ym.split('-').map(Number); return `${ym}-${pad(new Date(y,m,0).getDate())}`; };
+function mesesEntre(a,b){ const out=[]; let m=a; while(m<=b){ out.push(m); m=addMonths(m,1); } return out; }
+function precoMes(ticker, ym, atual){
+  const id=safeId(ticker); if (ym===atual){ const mk=D.mercado[id]; if (mk && Number.isFinite(+mk.preco)) return +mk.preco; }
+  const h=(G.historico[id]||{}).meses||{}; if (h[ym]!=null) return +h[ym];
+  const ks=Object.keys(h).filter(k=>k<=ym).sort(); return ks.length? +h[ks[ks.length-1]] : null;
+}
+function usdMes(ym, atual){ if (ym===atual) return cfg().usdbrl; const u=(G.indices.mensal||{}).USDBRL||{}; if (u[ym]) return +u[ym]; const ks=Object.keys(u).filter(k=>k<=ym).sort(); return ks.length? +u[ks[ks.length-1]] : cfg().usdbrl; }
+function calcRentab(classe){
+  const ativos = list('ativos').filter(a=>!classe || a.classe===classe);
+  const tickers = new Set(ativos.map(a=>a.ticker));
+  const ops = list('operacoes').filter(o=>tickers.has(o.ticker)).sort((a,b)=>a.data.localeCompare(b.data));
+  if (!ops.length) return null;
+  const atual = monthOf(todayISO()); const meses = mesesEntre(monthOf(ops[0].data), atual);
+  const provs = proventosCalc().filter(p=>tickers.has(p.ticker) && p.status==='pago' && p.dataPagamento);
+  const semHist = ativos.filter(a=>!G.historico[safeId(a.ticker)]).map(a=>a.ticker);
+  const valorEm = ym => { let v=0; const fim = ym===atual? todayISO() : ultimoDia(ym);
+    for (const a of ativos){ const pos=posicao(a.ticker, fim); if (pos.qtd<=0) continue;
+      const fator = opsDo(a.ticker).filter(o=>o.tipo==='desdobramento' && o.data>fim).reduce((f,o)=>f*(+o.fator||1),1);
+      let pr = precoMes(a.ticker, ym, atual); pr = pr==null ? pos.pm : pr*fator;
+      v += pos.qtd*pr*((a.moeda||'BRL')==='USD'? usdMes(ym, atual) : 1); }
+    return v; };
+  const linhas=[]; let vIni=0;
+  for (const ym of meses){
+    const vFim = valorEm(ym); const dias = +ultimoDia(ym).slice(8);
+    let F=0, Fw=0;
+    for (const o of ops){ if (monthOf(o.data)!==ym || !(o.tipo==='compra'||o.tipo==='venda')) continue;
+      const a=D.ativos[safeId(o.ticker)]||{}; const fx=(a.moeda||'BRL')==='USD'? (+o.cambio||usdMes(ym,atual)) : 1;
+      const v = o.tipo==='compra' ? (o.qtd*o.preco + (+o.taxas||0))*fx : -(o.qtd*o.preco - (+o.taxas||0))*fx;
+      F+=v; Fw += v*((dias - (+o.data.slice(8)) + 1)/dias); }
+    const Dv = provs.filter(p=>monthOf(p.dataPagamento)===ym).reduce((s,p)=>s+p.liquidoBRL,0);
+    const den = vIni + Fw; const r = den>0.01 ? (vFim - vIni - F + Dv)/den : 0;
+    linhas.push({ym, r, vIni, vFim, F, Dv}); vIni = vFim;
+  }
+  return {linhas, atual, semHist};
+}
+function serieIndice(nome, meses){ // acumulado a partir do início do primeiro mês da lista
+  const ix=G.indices.mensal||{}; const d=ix[nome]||{}; const out=[]; if (!Object.keys(d).length) return null;
+  if (nome==='CDI'||nome==='IPCA'){ let acc=1; for (const m of meses){ if (d[m]==null){ out.push(out.length? out[out.length-1] : 0); continue; } acc*=1+(+d[m])/100; out.push((acc-1)*100); } return out; }
+  const base = d[addMonths(meses[0],-1)]; if (!base) return null;
+  return meses.map(m=> d[m]!=null ? (d[m]/base-1)*100 : null);
+}
+const acumular = rs => rs.reduce((a,r)=>a*(1+r),1)-1;
+function mesesPeriodo(linhas, per){
+  const atual=monthOf(todayISO()); let ini=linhas[0].ym;
+  if (per==='ano') ini = atual.slice(0,4)+'-01'; else if (per==='12') ini=addMonths(atual,-11); else if (per==='24') ini=addMonths(atual,-23); else if (per==='60') ini=addMonths(atual,-59);
+  return linhas.filter(l=>l.ym>=ini);
+}
+function vRentabilidade(){
+  const st = ui.rent = ui.rent || {per:'inicio', classe:''};
+  const classesUsadas=[...new Set(list('ativos').map(a=>a.classe||'outro'))];
+  const R = calcRentab(st.classe);
+  const ctrl = `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px"><select id="rPer" class="sel">${[['inicio','Desde o início'],['ano','Este ano'],['12','Últimos 12 meses'],['24','Últimos 24 meses'],['60','Últimos 5 anos']].map(([v,n])=>`<option value="${v}" ${st.per===v?'selected':''}>${n}</option>`).join('')}</select>
+    <select id="rCls" class="sel"><option value="">Todos os tipos</option>${classesUsadas.map(c=>`<option value="${c}" ${st.classe===c?'selected':''}>${CLASSES[c]||c}</option>`).join('')}</select></div>`;
+  if (!R) return ctrl+'<div class="empty">Lance suas operações de compra para ver a rentabilidade.</div>';
+  const cdi=(G.indices.mensal||{}).CDI||{};
+  const cdiAc = ms => ms.reduce((a,m)=>a*(1+((cdi[m]!=null?+cdi[m]:0)/100)),1)-1;
+  const L=R.linhas, atual=R.atual;
+  const card=(tit, ls)=>{ const rr=acumular(ls.map(l=>l.r)); const c=cdiAc(ls.map(l=>l.ym)); const rel = c>0 ? rr/c : null;
+    return `<div class="card kpi"><div class="lbl">${tit}</div><div class="val ${rr>=0?'pos':'neg'}">${pct(rr)}</div><div class="sub">${rel==null?'—': `${fmtN(rel*100,0)}% do CDI <span class="hint">(CDI ${pct(c)})</span>`}</div></div>`; };
+  const ultimoCompleto = L.filter(l=>l.ym<atual).slice(-1);
+  const cards = `<div class="grid g3" style="margin-bottom:12px">${card('Rentabilidade total', L)}${card('Últimos 12 meses', L.slice(-12))}${card('Último mês ('+(ultimoCompleto[0]?mesCurto(ultimoCompleto[0].ym):'—')+')', ultimoCompleto)}</div>`;
+  const anos=[...new Set(L.map(l=>l.ym.slice(0,4)))].sort().reverse();
+  let acumAte = {}; let a=1; L.forEach(l=>{ a*=1+l.r; acumAte[l.ym]=a-1; });
+  const cel = v => v==null? '<td class="num muted">–</td>' : `<td class="num ${v>=0?'pos':'neg'}">${fmtN(v*100,2)}%</td>`;
+  const tabela = `<div class="tblwrap"><table class="rtab"><thead><tr><th>Ano</th>${MESES.map(m=>`<th class="num">${m.slice(0,3)}</th>`).join('')}<th class="num">No ano</th><th class="num">Acumulado</th></tr></thead><tbody>${anos.map(y=>{ const ls=L.filter(l=>l.ym.startsWith(y)); const ult=ls[ls.length-1];
+      return `<tr><td><b>${y}</b></td>${[...Array(12)].map((_,i)=>{ const l=ls.find(x=>x.ym===`${y}-${pad(i+1)}`); return cel(l?l.r:null); }).join('')}${cel(acumular(ls.map(l=>l.r)))}${cel(acumAte[ult.ym])}</tr>`; }).join('')}</tbody></table></div>`;
+  const aviso = R.semHist.length ? `<div class="hint" style="margin-bottom:8px">Ainda sem histórico de preços: ${R.semHist.map(esc).join(', ')}. Chega na próxima atualização (botão ↻ Atualizar cotações); até lá esses ativos entram pelo preço médio.</div>`:'';
+  return ctrl + aviso + cards + `<div class="card" style="margin-bottom:12px"><h3>Rentabilidade comparada com índices <span class="hint" style="font-weight:400">· clique na legenda para mostrar ou esconder</span></h3><div class="chartbox" style="height:300px"><canvas id="chRent"></canvas></div><div class="hint" style="margin-top:6px">IFIX, SMLL e IDIV aproximados pelos ETFs XFIX11, SMAL11 e DIVO11. Rentabilidade mensal pelo método de Dietz (considera aportes, vendas e proventos recebidos).</div></div>` + `<h3>Rentabilidade mês a mês</h3>` + tabela;
+}
+function desenharRentab(){
+  const st=ui.rent||{per:'inicio',classe:''};
+  if ($('#rPer')) $('#rPer').onchange=()=>{ st.per=$('#rPer').value; render(); };
+  if ($('#rCls')) $('#rCls').onchange=()=>{ st.classe=$('#rCls').value; render(); };
+  const R=calcRentab(st.classe); if (!R || !$('#chRent')) return;
+  const P = mesesPeriodo(R.linhas, st.per); if (!P.length) return;
+  const meses = P.map(l=>l.ym);
+  const labels = [mesCurto(addMonths(meses[0],-1))].concat(meses.map(mesCurto));
+  let a=1; const port=[0].concat(P.map(l=>{ a*=1+l.r; return (a-1)*100; }));
+  const cores={CDI:'#eab308',IPCA:'#ef4444',IFIX:'#3b82f6',IBOV:'#a855f7',SMLL:'#14b8a6',IDIV:'#f97316',IVVB11:'#ec4899'};
+  const ds=[{label:'Rentabilidade', data:port, borderColor:cssv('--acc'), backgroundColor:cssv('--acc2'), fill:true, tension:.25, pointRadius:2, borderWidth:2.5}];
+  for (const n of ['CDI','IPCA','IFIX','IBOV','SMLL','IDIV','IVVB11']){ const s=serieIndice(n, meses); if(!s) continue; ds.push({label:n, data:[0].concat(s), borderColor:cores[n], backgroundColor:cores[n], fill:false, tension:.25, pointRadius:0, borderWidth:1.8, hidden: n!=='CDI', spanGaps:true}); }
+  chart('chRent',{type:'line',data:{labels,datasets:ds},options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:cssv('--text'),boxWidth:12,boxHeight:3,usePointStyle:false}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${c.parsed.y==null?'—':fmtN(c.parsed.y,2)+'%'}`}}},scales:{x:{ticks:{color:cssv('--muted'),maxRotation:0,autoSkip:true},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>v+'%'},grid:{color:cssv('--line')}}}}});
+}
 function alocacao(cart){ const o={}; cart.ativos.forEach(r=>o[r.classe||'outro']=(o[r.classe||'outro']||0)+r.valorBRL); return o; }
 afterRender.carteira = () => {
+  if (ui.cartTab==='rentab') desenharRentab();
   if (ui.cartTab==='alocacao'){ const cart=carteira(); const al=Object.entries(alocacao(cart)).sort((a,b)=>b[1]-a[1]); if(al.length) chart('chAloc',{type:'doughnut',data:{labels:al.map(a=>CLASSES[a[0]]),datasets:[{data:al.map(a=>Math.round(a[1]*100)/100),backgroundColor:al.map(a=>CLASS_COR[a[0]]),borderWidth:2,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}}); }
   if (ui.cartTab==='proventos'){
     const provs=proventosCalc(); const base=monthOf(todayISO()); const meses=[...Array(12)].map((_,i)=>addMonths(base,i-11)).concat([addMonths(base,1),addMonths(base,2)]);
