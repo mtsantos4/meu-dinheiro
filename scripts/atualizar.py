@@ -624,6 +624,32 @@ def dividendos_anuais(sym):
         out[y] = round(out.get(y, 0) + float(ev["amount"]), 6)
     return out
 
+def fundamentus_proventos(ticker, classe):
+    url = f"https://www.fundamentus.com.br/{'fii_proventos' if classe == 'fii' else 'proventos'}.php?papel={ticker}&tipo=2"
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=30) as r:
+        txt = r.read().decode("iso-8859-1", "replace")
+    cab = [_html.unescape(re.sub(r"<[^>]+>", "", c)).strip().lower() for c in re.findall(r"<th[^>]*>(.*?)</th>", txt, re.S)]
+    idx = lambda *nomes: next((i for i, h in enumerate(cab) for n in nomes if n in h), None)
+    i_data, i_valor, i_tipo, i_pag, i_por = idx("data com", "data"), idx("valor"), idx("tipo"), idx("pagamento"), idx("por quantas")
+    if i_data == i_pag:
+        i_data = idx("última data", "data com")
+    out = []
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", txt, re.S):
+        cels = [_html.unescape(re.sub(r"<[^>]+>", "", c)).strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
+        if len(cels) != len(cab) or i_data is None or i_valor is None:
+            continue
+        dc = data_br(cels[i_data]); pg = data_br(cels[i_pag]) if i_pag is not None else None
+        try:
+            v = float(cels[i_valor].replace(".", "").replace(",", "."))
+            por = float(cels[i_por].replace(".", "").replace(",", ".")) if i_por is not None and cels[i_por] else 1
+        except ValueError:
+            continue
+        if dc and v > 0:
+            out.append({"dataCom": dc, "dataPagamento": pg, "valor": round(v / (por or 1), 8), "tipo": cels[i_tipo] if i_tipo is not None else ""})
+    if os.environ.get("TICKERS"):
+        print("FPROV", ticker, cab, len(out), out[:3])
+    return out
+
 def dividendos_b3_por_ano(provs):
     out = {}
     for p in provs or []:
@@ -705,10 +731,22 @@ def fundamentos_ativo(a, agora, ctx):
         except Exception as e:
             log(f"  receitas/lucros {t}: {e}")
     # proventos por ano: B3 (completo, com JCP) quando houver; senão Yahoo
-    div, fonte_div = {}, None
-    provs_b3 = (ctx.get("provs") or {}).get(t)
-    if provs_b3:
-        div, fonte_div = dividendos_b3_por_ano(provs_b3), ctx.get("fonteProv", {}).get(t) or "B3"
+    div, fonte_div, hist = {}, None, []
+    if classe in ("acao", "fii"):
+        try:
+            hist = fundamentus_proventos(t, classe)
+            if hist:
+                div, fonte_div = dividendos_b3_por_ano(hist), "Fundamentus"
+                if os.environ.get("TICKERS"):
+                    pg = {}
+                    for p in hist:
+                        if p["dataPagamento"]:
+                            pg[p["dataPagamento"][:4]] = round(pg.get(p["dataPagamento"][:4], 0) + p["valor"], 4)
+                    print("POR PAGAMENTO", t, dict(sorted(pg.items())[-7:]), "POR DATA-COM", dict(sorted(div.items())[-7:]))
+        except Exception as e:
+            log(f"  proventos Fundamentus {t}: {e}")
+    if div:
+        pass
     elif classe != "cripto":
         try:
             div, fonte_div = dividendos_anuais(sym_local), "Yahoo Finance"
@@ -727,6 +765,8 @@ def fundamentos_ativo(a, agora, ctx):
             log(f"  preço médio anual {t}: {e}")
     if not d and not div and not extra:
         return None
+    if hist:
+        extra["proventos"] = [{"c": p["dataCom"], "p": p["dataPagamento"], "v": p["valor"], "t": p["tipo"]} for p in sorted(hist, key=lambda x: x["dataCom"], reverse=True)[:60]]
     return {"ticker": t, "classe": classe, "ind": d, "info": info, "divAnual": div, "fonteDiv": fonte_div, "precoAno": precoAno,
             "moedaDiv": "USD" if (classe in ("etf_ext", "stock_ext") or moeda == "USD") else "BRL", **extra,
             "fontes": fontes, "atualizadoEm": agora, "v": FUND_V}
