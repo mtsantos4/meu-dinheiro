@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102113812';
+const APP_BUILD = '20261102114203';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -1115,7 +1115,7 @@ function resumoInvest(){
     provTotal: pagos.reduce((s,p)=>s+p.liquidoBRL,0), prov12: pagos.filter(p=>monthOf(p.dataPagamento)>=ini12).reduce((s,p)=>s+p.liquidoBRL,0),
     aReceber: provs.filter(p=>p.status!=='pago').reduce((s,p)=>s+p.liquidoBRL,0) };
 }
-const cardPatrimonio = R => { const g=R.cart.total-R.cart.custo, gp=R.cart.custo? g/R.cart.custo*100:0, sg=v=>v>0?'+':v<0?'−':''; return `<div class="card kpi"><div class="lbl">Patrimônio total</div><div class="val">${money(R.cart.total)}</div><div class="sub"><b class="${g>=0?'pos':'neg'}">${g>=0?'▲':'▼'} ${sg(gp)}${fmtN(Math.abs(gp),2)}%</b> sobre o investido · hoje <span class="${R.dia>=0?'pos':'neg'}">${sg(R.diaPct)}${fmtN(Math.abs(R.diaPct)*100,2)}%</span></div><div class="sub">Valor investido <b>${money(R.cart.custo)}</b></div></div>`; };
+const cardPatrimonio = R => { const g=R.cart.total-R.cart.custo, gp=R.cart.custo? g/R.cart.custo*100:0, sg=v=>v>0?'+':v<0?'−':''; return `<div class="card kpi"><div class="lbl">Patrimônio total</div><div class="val">${money(R.cart.total)}</div><div class="sub"><b class="${g>=0?'pos':'neg'}">${g>=0?'▲':'▼'} ${sg(gp)}${fmtN(Math.abs(gp),2)}%</b></div><div class="sub">Hoje <span class="${R.dia>=0?'pos':'neg'}">${sg(R.diaPct)}${fmtN(Math.abs(R.diaPct)*100,2)}%</span></div><div class="sub">Valor investido <b>${money(R.cart.custo)}</b></div></div>`; };
 function vResumoInvest(){
   const R=resumoInvest(); const RR=calcRentab(''); const L=RR?RR.linhas:[];
   const r12=acumular(L.slice(-12).map(l=>l.r)), rT=acumular(L.map(l=>l.r));
