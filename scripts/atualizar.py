@@ -628,6 +628,8 @@ def fundamentus_proventos(ticker, classe):
     url = f"https://www.fundamentus.com.br/{'fii_proventos' if classe == 'fii' else 'proventos'}.php?papel={ticker}&tipo=2"
     with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=30) as r:
         txt = r.read().decode("iso-8859-1", "replace")
+    tabelas = re.findall(r"<table.*?</table>", txt, re.S) or [txt]
+    txt = next((t for t in tabelas if "pagamento" in t.lower()), tabelas[0])
     cab = [_html.unescape(re.sub(r"<[^>]+>", "", c)).strip().lower() for c in re.findall(r"<th[^>]*>(.*?)</th>", txt, re.S)]
     idx = lambda *nomes: next((i for i, h in enumerate(cab) for n in nomes if n in h), None)
     i_data, i_valor, i_tipo, i_pag, i_por = idx("data com", "data"), idx("valor"), idx("tipo"), idx("pagamento"), idx("por quantas")

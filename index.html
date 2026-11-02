@@ -158,7 +158,7 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 .novaversao{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:70;background:var(--acc);color:#fff;border:0;border-radius:99px;padding:11px 18px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:pointer}
 @media (min-width:761px){.novaversao{bottom:24px}}
 .sel{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
-.tfix{table-layout:fixed}@media(max-width:700px){.tfix th,.tfix td{font-size:12.5px;padding-left:4px;padding-right:4px}}.so-m{display:none}.tklink{color:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--acc) 70%,transparent);text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:pointer}.tklink:hover{color:var(--acc)}.indgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.indgrid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.indcel{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}.indcel b{font-size:15px;font-variant-numeric:tabular-nums}@media(max-width:700px){.indgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}a.btn{text-decoration:none;color:var(--text);display:inline-flex;align-items:center}.pctpill{display:inline-block;font-weight:600;font-size:12.5px;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent)}@media(max-width:700px){.tpos th:nth-child(4),.tpos td:nth-child(4){display:none}.tpos th:first-child,.tpos td:first-child{width:27%}.tpos th:nth-child(5),.tpos td:nth-child(5){width:27%}.pctpill{font-size:11.5px;padding:1px 5px}}@media(max-width:700px){.so-m{display:block}}.tfix th:first-child,.tfix td:first-child{width:24%}
+.tfix{table-layout:fixed}@media(max-width:700px){.tfix th,.tfix td{font-size:12.5px;padding-left:4px;padding-right:4px}}.so-m{display:none}.tklink{color:inherit;text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--acc) 70%,transparent);text-decoration-thickness:1.5px;text-underline-offset:3px;cursor:pointer}.tklink:hover{color:var(--acc)}.indgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}.indgrid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.indcel{display:flex;flex-direction:column;gap:2px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}.indcel b{font-size:15px;font-variant-numeric:tabular-nums}.fsec{margin-top:18px;padding-top:14px;border-top:1px solid var(--line)}.fsec>h3{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px}.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.chip{display:flex;flex-direction:column;padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);min-width:80px}.chip b{font-size:15px}.trent td,.trent th{white-space:nowrap}@media(max-width:700px){.indgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}a.btn{text-decoration:none;color:var(--text);display:inline-flex;align-items:center}.pctpill{display:inline-block;font-weight:600;font-size:12.5px;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent)}@media(max-width:700px){.tpos th:nth-child(4),.tpos td:nth-child(4){display:none}.tpos th:first-child,.tpos td:first-child{width:27%}.tpos th:nth-child(5),.tpos td:nth-child(5){width:27%}.pctpill{font-size:11.5px;padding:1px 5px}}@media(max-width:700px){.so-m{display:block}}.tfix th:first-child,.tfix td:first-child{width:24%}
 .donutwrap{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .donutleg{max-height:220px;overflow:auto}
 .bloco{border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden;background:var(--panel)}
@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102165620';
+const APP_BUILD = '20261102165821';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -1835,55 +1835,128 @@ function linksExternos(tk, classe){
   return [i10&&`<a class="btn sm" href="https://investidor10.com.br/${i10}/${t}/" target="_blank" rel="noopener">Investidor10 ↗</a>`, si&&`<a class="btn sm" href="https://statusinvest.com.br/${si}/${t}" target="_blank" rel="noopener">Status Invest ↗</a>`].filter(Boolean).join('');
 }
 function abrirInfoAtivo(tk){
-  const a = Object.values(D.ativos).find(x=>x.ticker===tk) || {ticker:tk, classe:'acao', moeda:'BRL'};
+  const a = Object.values(D.ativos).find(x=>x.ticker===tk) || {ticker:tk, classe:/11$/.test(tk)?'fii':'acao', moeda:'BRL'};
   const classe = a.classe||'acao', moeda = a.moeda||'BRL', sid = safeId(tk);
-  const m = D.mercado[sid]||{}, f = G.fundamentos[sid]||null, st = G.setores[sid]||{}, ind = (f&&f.ind)||{}, info=(f&&f.info)||{};
+  const m = D.mercado[sid]||{}, f = G.fundamentos[sid]||null, st = G.setores[sid]||{}, ind = {...((f&&f.ind)||{})}, info=(f&&f.info)||{};
   const preco = Number.isFinite(+m.preco)? +m.preco : null;
-  const pos = carteira().todos.find(r=>r.ticker===tk && r.qtd>0);
-  const hoje = todayISO(), ano = +hoje.slice(0,4), ini12 = new Date(Date.now()-365*864e5).toISOString().slice(0,10);
-  const provs12 = list('proventos').filter(p=>p.ticker===tk && p.dataCom && p.dataCom>ini12 && p.dataCom<=hoje && p.dataCom.slice(0,4)<='2100');
-  const moedaDiv = (f&&f.moedaDiv) || moeda;
-  let div12 = provs12.reduce((s,p)=>s+(+p.valor||0),0), fonte12 = 'proventos com data-com nos últimos 12 meses';
-  if (!(div12>0) && ind.divCota) { div12 = ind.divCota; fonte12='dividendo por cota dos últimos 12 meses'; }
-  if (!(div12>0) && ind.dy && preco) { div12 = ind.dy/100*preco; fonte12='dividend yield informado'; }
-  const divAno = (f&&f.divAnual)||{}; const anos5 = [1,2,3,4,5].map(k=>String(ano-k)); const comDado = anos5.filter(y=>divAno[y]>0);
+  const moedaDiv = (f&&f.moedaDiv) || moeda, ehFii = classe==='fii', ehAcao = classe==='acao';
+  const ano = +todayISO().slice(0,4), divAno = (f&&f.divAnual)||{}, precoAno = (f&&f.precoAno)||{};
+  const anos5 = [1,2,3,4,5].map(k=>String(ano-k)), comDado = anos5.filter(y=>divAno[y]>0);
   const media5 = comDado.length ? anos5.reduce((s,y)=>s+(divAno[y]||0),0)/5 : null;
-  const temDiv = classe!=='cripto' && (div12>0 || media5>0);
-  const graham = classe==='acao' && ind.lpa>0 && ind.vpa>0 ? Math.sqrt(22.5*ind.lpa*ind.vpa) : null;
-  const nome = a.nome || st.nome || info.empresa || '';
-  const setorTxt = [st.setor||info.setor, st.segmento||info.segmento||info.subsetor||info.industria||info.categoria].filter(Boolean).filter((v,i,arr)=>arr.indexOf(v)===i).join(' · ');
-  const margem = (alvo) => preco && alvo ? alvo/preco-1 : null;
-  const caixaPreco = (titulo, valor, sub, dica) => { const mg = margem(valor); return `<div class="card kpi" style="margin:0"><div class="lbl" title="${esc(dica||'')}">${titulo}</div><div class="val" style="font-size:20px">${valor? money(valor, moedaDiv):'—'}</div>${mg!=null?`<div class="sub"><span class="pctpill ${mg>=0?'pos':'neg'}">${mg>=0?'▲ ':'▼ '}${pct(mg)}</span> ${mg>=0?'acima do preço atual':'abaixo do preço atual'}</div>`:''}<div class="hint" style="margin-top:4px">${sub}</div></div>`; };
+  const dyAno = y => divAno[y]>0 && precoAno[y]>0 ? divAno[y]/precoAno[y]*100 : null;
+  const dyMed5 = comDado.length ? anos5.map(y=>dyAno(y)||0).reduce((s,v)=>s+v,0)/5 : null;
+  if (!Number.isFinite(ind.payout) && ind.dy>0 && ind.pl>0) ind.payout = ind.dy*ind.pl/100;
+  if (!Number.isFinite(ind.roa) && ind.lucro12 && ind.ativo) ind.roa = ind.lucro12/ind.ativo*100;
+  if (!Number.isFinite(ind.plAtivos) && ind.patrimLiq && ind.ativo) ind.plAtivos = ind.patrimLiq/ind.ativo;
+  if (!Number.isFinite(ind.passAtivos) && ind.patrimLiq && ind.ativo) ind.passAtivos = 1-ind.patrimLiq/ind.ativo;
+  const res = (f&&f.resultados)||{}, resA = res.anual||{}, anosR = Object.keys(resA).sort();
+  const cagr = (campo) => { const ys=anosR.filter(y=>Number.isFinite(resA[y][campo])); if (ys.length<2) return null; const v0=resA[ys[0]][campo], v1=resA[ys[ys.length-1]][campo], n=+ys[ys.length-1]-+ys[0]; return v0>0&&v1>0&&n>0 ? (Math.pow(v1/v0,1/n)-1)*100 : null; };
+  ind.cagrLucro = cagr('lucro'); ind.cagrReceita = cagr('receita'); const nAnosR = anosR.length? +anosR[anosR.length-1]-+anosR[0] : 0;
+  const graham = ehAcao && ind.lpa>0 && ind.vpa>0 ? Math.sqrt(22.5*ind.lpa*ind.vpa) : null;
+  const sc = f&&f.setorComp, med = (sc&&sc.mediana)||{};
+  const nome = a.nome || st.nome || info.nomeB3 || info.empresa || '';
+  const setorTxt = [st.setor||info.setor, st.subsetor||info.subsetor, st.segmento||info.segmento||info.industria||info.categoria].filter(Boolean).filter((v,i,arr)=>arr.indexOf(v)===i).join(' · ');
+  const mUSD = ['etf_ext','stock_ext','bdr','cripto'].includes(classe) ? 'USD' : moedaDiv;
+  const sec = (titulo, corpo, extra='') => corpo ? `<div class="fsec"><h3>${titulo}${extra}</h3>${corpo}</div>` : '';
+  const cel = (k, l, t, dica) => { const v=ind[k]; if (!Number.isFinite(v)) return ''; const md = med[k]; return `<div class="indcel" ${dica?`title="${esc(dica)}"`:''}><span class="hint">${l}${dica?' ⓘ':''}</span><b>${fmtInd(v,t,t==='M'?mUSD:moedaDiv)}</b>${Number.isFinite(md)&&md!==0?`<span class="hint" style="font-size:11.5px">Setor: ${fmtInd(md,t,moedaDiv)}</span>`:''}</div>`; };
+  const grupo = (titulo, itens) => { const h = itens.map(x=>cel(...x)).join(''); return h ? `<div class="indgrp"><div class="hint" style="font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:11px;margin:10px 0 6px">${titulo}</div><div class="indgrid">${h}</div></div>` : ''; };
+  const D_ = IND_DICA;
+  const indicadores = ehFii
+    ? grupo('Fundo', [['pvp','P/VP','x',D_.pvp],['dy','Dividend yield','%',D_.dy],['divCota','Dividendo/cota (12m)','$'],['vpCota','Valor patrimonial/cota','$'],['ffoYield','FFO yield','%',D_.ffoYield],['ffoCota','FFO/cota','$']])
+      + grupo('Imóveis', [['vacancia','Vacância média','%',D_.vacancia],['capRate','Cap rate','%'],['qtdImoveis','Imóveis','n'],['qtdUnidades','Unidades','n'],['area','Área (m²)','n'],['aluguelM2','Aluguel/m²','$']])
+      + grupo('Outros', [['taxaAdm','Taxa de administração','%'],['beta','Beta','x'],['pl','P/L','x']])
+    : grupo('Valuation', [['pl','P/L','x',D_.pl],['plFuturo','P/L projetado','x'],['pvp','P/VP','x',D_.pvp],['psr','P/Receita (PSR)','x'],['evEbitda','EV/EBITDA','x',D_.evEbitda],['evEbit','EV/EBIT','x'],['pEbit','P/EBIT','x'],['pAtivos','P/Ativo','x'],['pCapGiro','P/Capital de giro','x'],['pAcl','P/Ativo circ. líq.','x'],['lpa','LPA','$'],['vpa','VPA','$']])
+      + grupo('Eficiência', [['margBruta','Margem bruta','%'],['margEbit','Margem EBIT','%'],['margLiq','Margem líquida','%'],['giroAtivos','Giro dos ativos','x']])
+      + grupo('Rentabilidade', [['roe','ROE','%',D_.roe],['roa','ROA','%'],['roic','ROIC','%',D_.roic]])
+      + grupo('Dividendos', [['dy','Dividend yield','%',D_.dy],['payout','Payout','%',D_.payout]])
+      + grupo('Endividamento', [['divLiqPl','Dív. líquida/Patrimônio','x'],['divLiqEbitda','Dív. líquida/EBITDA','x',D_.divLiqEbitda],['liqCorr','Liquidez corrente','x',D_.liqCorr],['plAtivos','Patrimônio/Ativos','x'],['passAtivos','Passivos/Ativos','x']])
+      + grupo('Crescimento', [['cresRec5','Receitas (CAGR 5 anos)','%'],['cagrReceita',`Receitas (CAGR ${nAnosR} anos)`,'%'],['cagrLucro',`Lucros (CAGR ${nAnosR} anos)`,'%'],['cresRec','Receita (último ano)','%']])
+      + grupo('Mercado', [['beta','Beta','x'],['taxaAdm','Taxa de administração','%'],['retorno5a','Retorno médio 5 anos','%'],['precoAlvo','Preço-alvo dos analistas','$']]);
+  // rentabilidade histórica
+  const rent = (f&&f.rent)||{}, pers=[['1m','1 mês'],['3m','3 meses'],['1a','1 ano'],['2a','2 anos'],['5a','5 anos'],['10a','10 anos']].filter(([k])=>rent[k]);
+  const cor = v => !Number.isFinite(v)?'':(v>=0?'pos':'neg');
+  const tabRent = pers.length ? `<div class="tblwrap"><table class="trent"><thead><tr><th></th>${pers.map(([,l])=>`<th class="num">${l}</th>`).join('')}</tr></thead><tbody>
+      <tr><td class="hint">Nominal</td>${pers.map(([k])=>`<td class="num ${cor(rent[k].nominal)}">${pct(rent[k].nominal/100)}</td>`).join('')}</tr>
+      <tr><td class="hint">Real <span title="Descontada a inflação (IPCA)">ⓘ</span></td>${pers.map(([k])=>`<td class="num ${cor(rent[k].real)}">${rent[k].real==null?'—':pct(rent[k].real/100)}</td>`).join('')}</tr></tbody></table></div><div class="hint" style="margin-top:4px">Considera a valorização e os proventos reinvestidos. Real = descontada a inflação (IPCA).</div>` : '';
+  // dividendos
+  const anosD = Object.keys(divAno).sort().filter(y=>+y>=ano-10);
+  const provs = (f&&f.proventos)||[];
+  const kd = (l,v,sub) => `<div class="indcel"><span class="hint">${l}</span><b>${v}</b>${sub?`<span class="hint" style="font-size:11.5px">${sub}</span>`:''}</div>`;
+  const blocoDiv = anosD.length||provs.length ? `<div class="indgrid">${kd('Dividend yield atual', Number.isFinite(ind.dy)? fmtN(ind.dy,2)+'%':'—','últimos 12 meses')}${kd('DY médio 5 anos', dyMed5!=null? fmtN(dyMed5,2)+'%':'—', `${anos5[4]}–${anos5[0]}`)}${kd('Média por ano (5 anos)', media5? money(media5,moedaDiv):'—', `por ${ehFii?'cota':'ação'}`)}${!ehFii&&Number.isFinite(ind.payout)?kd('Payout atual', fmtN(ind.payout,2)+'%'):''}</div>
+      ${anosD.length?`<div class="chartbox" style="height:200px;margin-top:10px"><canvas id="chDivAno"></canvas></div>`:''}
+      ${provs.length?`<div class="tblwrap" style="margin-top:10px;max-height:260px;overflow:auto"><table><thead><tr><th>Tipo</th><th>Data-com</th><th>Pagamento</th><th class="num">Valor</th></tr></thead><tbody>${provs.map(p=>`<tr><td>${esc(p.t||'')}</td><td>${fmtData(p.c)}</td><td>${p.p?fmtData(p.p):'—'}</td><td class="num">${money(p.v,moedaDiv).replace(/(,\d{2})$/,'$1')}${p.v<0.01?'':''}</td></tr>`).join('')}</tbody></table></div>`:''}
+      <div class="hint" style="margin-top:4px">Valores brutos por ${ehFii?'cota':'ação'}, somados pelo ano da data-com${f&&f.fonteDiv?` · fonte: ${esc(f.fonteDiv)}`:''}.</div>` : '';
+  // preço teto / justo
+  const tetoBox = (media5>0||graham) ? `<div class="indgrid3" id="boxTeto"></div><div class="hint" style="margin-top:6px">${media5>0?`<b>Preço teto (Bazin)</b>: média dos proventos pagos nos últimos 5 anos (${anos5[4]}–${anos5[0]}) ÷ rentabilidade desejada.${comDado.length<5?` Só ${comDado.length} desses anos tiveram proventos (os outros contam como zero).`:''} `:''}${graham?'<b>Preço justo (Graham)</b>: √(22,5 × LPA × VPA). Não funciona bem para empresas de tecnologia ou com patrimônio pequeno.':''} São referências, não recomendação.</div>` : '';
+  // receitas e lucros
+  const blocoRes = anosR.length ? `<div class="row" style="justify-content:flex-end;margin-bottom:6px"><div class="seg" id="segRes"><button class="on" data-v="anual">Anual</button>${res.trimestral?'<button data-v="trimestral">Trimestral</button>':''}</div></div><div class="chartbox" style="height:220px"><canvas id="chRes"></canvas></div><div class="hint" style="margin-top:4px">Valores em ${res.moeda==='USD'?'dólares (como a empresa divulga)':'reais'} · fonte: Yahoo Finance.</div>` : '';
+  // checklist
+  const usd = cfg().usdbrl||5.5, inicio = (()=>{ const s=info.inicioB3||info.inicioNegociacao; if(!s) return null; const mm=s.match(/(\d{2})\/(\d{2})\/(\d{4})/); return mm? `${mm[3]}-${mm[2]}-${mm[1]}` : s; })();
+  const lucrosA = anosR.map(y=>resA[y].lucro).filter(Number.isFinite), resT = res.trimestral||{}, lucrosT = Object.keys(resT).sort().map(k=>resT[k].lucro).filter(Number.isFinite);
+  const chk = (ok, txt, det) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);gap:10px"><span style="width:22px;text-align:center;font-weight:700" class="${ok===true?'pos':ok===false?'neg':'muted'}">${ok===true?'✓':ok===false?'✕':'–'}</span><span style="flex:1">${txt}</span><span class="hint">${det||''}</span></div>`;
+  const checklist = (ehAcao||classe==='bdr') ? [
+    chk(inicio? (Date.now()-new Date(inicio))/31557600000>5 : null, 'Mais de 5 anos de bolsa', inicio? 'desde '+inicio.slice(0,4):''),
+    chk(lucrosA.length? lucrosA.every(v=>v>0):null, `Lucro em todos os anos disponíveis`, lucrosA.length? `${lucrosA.length} anos`:'sem dados'),
+    chk(lucrosT.length? lucrosT.every(v=>v>0):null, 'Lucro nos últimos trimestres', lucrosT.length? `${lucrosT.length} trimestres`:'sem dados'),
+    chk(comDado.length? anos5.every(y=>(dyAno(y)||0)>=5):null, 'Dividendos acima de 5% ao ano nos últimos 5 anos', dyMed5!=null?`média ${fmtN(dyMed5,1)}%`:''),
+    chk(Number.isFinite(ind.roe)? ind.roe>10:null, 'ROE acima de 10%', Number.isFinite(ind.roe)? fmtN(ind.roe,1)+'%':''),
+    chk(Number.isFinite(ind.divLiqPl)? ind.divLiqPl<1 : (ind.divBruta&&ind.patrimLiq? ind.divBruta<ind.patrimLiq:null), 'Dívida menor que o patrimônio', Number.isFinite(ind.divLiqPl)? 'dív. líq./PL '+fmtN(ind.divLiqPl,2):''),
+    chk(Number.isFinite(ind.cresRec5)? ind.cresRec5>0 : (ind.cagrReceita!=null? ind.cagrReceita>0:null), 'Receita crescendo nos últimos anos', Number.isFinite(ind.cresRec5)? fmtN(ind.cresRec5,1)+'% ao ano': ind.cagrReceita!=null? fmtN(ind.cagrReceita,1)+'% ao ano':''),
+    chk(ind.cagrLucro!=null? ind.cagrLucro>0:null, 'Lucro crescendo nos últimos anos', ind.cagrLucro!=null? fmtN(ind.cagrLucro,1)+'% ao ano':''),
+    chk(Number.isFinite(ind.liquidez)? ind.liquidez/usd>2e6 : null, 'Liquidez diária acima de US$ 2 milhões', Number.isFinite(ind.liquidez)? abrev(ind.liquidez,'BRL')+'/dia':''),
+  ].join('') : '';
+  // informações
+  const infoLin = (l, v) => v ? `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="hint" style="flex:1">${l}</span><b style="text-align:right">${v}</b></div>` : '';
+  const M = (k) => Number.isFinite(ind[k]) ? abrev(ind[k], mUSD) : '';
+  const cnpj = info.cnpj ? String(info.cnpj).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5') : '';
+  const infos = [infoLin('Valor de mercado', M('valorMercado')), infoLin('Valor da firma', M('valorFirma')), infoLin('Patrimônio líquido', M('patrimLiq')), infoLin('Patrimônio do fundo', M('patrimonioFundo')),
+    infoLin(ehFii?'Nº de cotas':'Nº de ações', Number.isFinite(ind.nAcoes||ind.nCotas)? fmtInd(ind.nAcoes||ind.nCotas,'N'):''), infoLin('Ativos', M('ativo')), infoLin('Ativo circulante', M('ativoCirc')), infoLin('Disponibilidades', M('caixa')),
+    infoLin('Dívida bruta', M('divBruta')), infoLin('Dívida líquida', M('divLiq')), infoLin('Receita (12 meses)', M('receita12')), infoLin('EBITDA (12 meses)', M('ebitda')), infoLin('Lucro líquido (12 meses)', M('lucro12')),
+    infoLin('Liquidez média diária', Number.isFinite(ind.liquidez)? abrev(ind.liquidez, moedaDiv):''), infoLin('Segmento de listagem', esc(info.listagem||'')), infoLin('Gestão', esc(info.gestao||'')), infoLin('Mandato', esc(info.mandato||'')),
+    infoLin('Gestora', esc(info.familia||'')), infoLin('País', esc(info.pais||'')), infoLin('Ativo de origem (EUA)', esc(info.ativoEua||'')), infoLin('CNPJ', cnpj), infoLin('Na bolsa desde', inicio? fmtData(inicio):''),
+    infoLin('Último balanço', esc(info.balanco||'')), infoLin('Site', info.site? `<a href="${/^https?:/.test(info.site)?'':'https://'}${esc(info.site)}" target="_blank" rel="noopener">${esc(info.site.replace(/^https?:\/\//,'').slice(0,40))}</a>`:'')].join('');
+  const sobre = info.atividade ? `<div class="hint" style="margin-top:8px;line-height:1.5"><b>Atividade:</b> ${esc(info.atividade.replace(/\.\s/g,', '))}</div>` : '';
+  // comparação
+  const pares = (sc&&sc.pares)||[];
+  const cab = ehFii ? [['preco','Cotação','$'],['dy','DY','%'],['pvp','P/VP','x'],['valorMercado','Valor de mercado','M'],['vacancia','Vacância','%']] : [['preco','Cotação','$'],['dy','DY','%'],['pl','P/L','x'],['pvp','P/VP','x'],['roe','ROE','%'],['margLiq','Marg. líq.','%']];
+  const tabPares = pares.length>1 ? `<div class="tblwrap"><table><thead><tr><th>Ativo</th>${cab.map(([,l])=>`<th class="num">${l}</th>`).join('')}</tr></thead><tbody>${pares.map(p=>`<tr ${p.t===tk?'style="background:var(--panel2);font-weight:600"':''}><td>${G.fundamentos[safeId(p.t)]&&p.t!==tk? tkA(p.t) : esc(p.t)}</td>${cab.map(([k,,t])=>`<td class="num">${p[k]==null||(p[k]===0&&k!=='dy')?'—':fmtInd(p[k],t,'BRL')}</td>`).join('')}</tr>`).join('')}</tbody></table></div><div class="hint" style="margin-top:4px">${ehFii?`Fundos do mesmo segmento (${esc(info.segmento||'')})`:`Empresas do mesmo setor`} com mais liquidez · ${sc.n} no total. “Setor” nos indicadores = mediana desse grupo.</div>` : '';
+  const chips = [['Rentab. 12m', rent['1a']? pct(rent['1a'].nominal/100):null, rent['1a']&&cor(rent['1a'].nominal)], ['P/L', Number.isFinite(ind.pl)?fmtN(ind.pl,2):null], ['P/VP', Number.isFinite(ind.pvp)?fmtN(ind.pvp,2):null], ['DY', Number.isFinite(ind.dy)?fmtN(ind.dy,2)+'%':null]].filter(c=>c[1]!=null);
   const r52 = (ind.min52 && ind.max52 && preco) ? Math.max(0,Math.min(1,(preco-ind.min52)/(ind.max52-ind.min52||1))) : null;
-  const indItens = IND_DEF.filter(([k])=>Number.isFinite(ind[k])).map(([k,l,t])=>`<div class="indcel" ${IND_DICA[k]?`title="${esc(IND_DICA[k])}"`:''}><span class="hint">${l}${IND_DICA[k]?' ⓘ':''}</span><b>${fmtInd(ind[k], t, ['M','$'].includes(t)? (['etf_ext','stock_ext','bdr','cripto'].includes(classe) && t==='M' ? 'USD' : moedaDiv) : moedaDiv)}</b></div>`).join('');
-  const txtInfo = [['Gestão',info.gestao],['Mandato',info.mandato],['Tipo',info.tipo],['País',info.pais],['Gestora',info.familia],['Último balanço',info.balanco],['Ativo nos EUA',info.ativoEua]].filter(x=>x[1]).map(([l,v])=>`<div class="indcel"><span class="hint">${l}</span><b style="font-size:13.5px">${esc(v)}</b></div>`).join('');
-  const anosG = Object.keys(divAno).sort().slice(-8);
   modal(`<div class="row" style="align-items:flex-start;gap:12px"><div style="flex:1;min-width:0"><h2 style="margin:0">${esc(tk)} <span class="pill" style="vertical-align:middle;font-size:12px">${CLASSES[classe]||classe}</span></h2><div class="hint">${esc(nome)}${setorTxt?' · '+esc(setorTxt):''}</div></div>
       <div style="text-align:right"><div style="font-size:22px;font-weight:700">${preco!=null?money(preco,moeda):'—'}</div>${Number.isFinite(+m.variacao)?`<div class="${+m.variacao>=0?'pos':'neg'}" style="font-size:13px">${pct(+m.variacao/100)} hoje</div>`:''}</div></div>
+    ${chips.length?`<div class="chips">${chips.map(([l,v,c])=>`<div class="chip"><span class="hint">${l}</span><b class="${c||''}">${v}</b></div>`).join('')}</div>`:''}
     ${r52!=null?`<div style="margin:12px 0 4px"><div class="hint" style="display:flex;justify-content:space-between"><span>Mín. 52 sem. ${money(ind.min52,moeda)}</span><span>Máx. 52 sem. ${money(ind.max52,moeda)}</span></div><div style="position:relative;height:6px;border-radius:3px;background:var(--line);margin-top:4px"><span style="position:absolute;left:calc(${(r52*100).toFixed(1)}% - 6px);top:-3px;width:12px;height:12px;border-radius:50%;background:var(--acc)"></span></div></div>`:''}
-    ${pos?`<h3 class="mt">Sua posição</h3><div class="indgrid">
-      <div class="indcel"><span class="hint">Quantidade</span><b>${fmtQ(pos.qtd)}</b></div><div class="indcel"><span class="hint">Preço médio</span><b>${money(pos.pm,moeda)}</b></div>
-      <div class="indcel"><span class="hint">Saldo</span><b>${money(pos.valor,moeda)}</b></div><div class="indcel"><span class="hint">Variação</span><b class="${pos.resultado>=0?'pos':'neg'}">${pct(pos.resultadoPct)}</b></div>
-      <div class="indcel"><span class="hint">Rentabilidade</span><b class="${pos.rentReal>=0?'pos':'neg'}">${pct(pos.rentReal)}</b></div><div class="indcel"><span class="hint">Proventos recebidos</span><b>${money(pos.provRec,moeda)}</b></div>
-      ${preco&&div12>0?`<div class="indcel"><span class="hint">Yield on cost</span><b>${fmtN(div12/pos.pm*100,2)}%</b></div>`:''}<div class="indcel"><span class="hint">% da carteira</span><b>${fmtN((pos.peso||0)*100,1)}%</b></div></div>`:''}
-    ${temDiv||graham?`<h3 class="mt" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Preço teto${graham?' e preço justo':''}<span class="sp"></span><label class="hint" style="display:flex;align-items:center;gap:6px;font-weight:400">Rentabilidade desejada <input id="txTeto" inputmode="decimal" style="width:64px;padding:4px 8px" value="${fmtN(getTaxaTeto(),1)}">%</label></h3>
-      <div class="indgrid3" id="boxTeto"></div>
-      <div class="hint" style="margin-top:6px">Preço teto (método Bazin): dividendos por ação ÷ rentabilidade desejada — o maior preço que ainda garante esse rendimento.${graham?' Preço justo (Graham): √(22,5 × LPA × VPA).':''} São referências, não recomendação.</div>`:''}
-    ${anosG.length?`<h3 class="mt">Proventos por ano <span class="hint" style="font-weight:400">· por ${classe==='fii'?'cota':'ação'}, valor bruto</span></h3><div class="chartbox" style="height:170px"><canvas id="chDivAno"></canvas></div>`:''}
-    ${indItens||txtInfo?`<h3 class="mt">Indicadores</h3><div class="indgrid">${indItens}${txtInfo}</div>`:`<div class="hint mt">${f? 'Sem indicadores para este ativo.' : 'Os indicadores deste ativo ainda não foram buscados. Eles chegam na próxima atualização automática (ou toque em ↻ Atualizar em Investimentos).'}</div>`}
-    ${f?`<div class="hint" style="margin-top:8px">Fontes: ${esc((f.fontes||[]).concat(anosG.length?['Yahoo Finance (proventos por ano)']:[]).filter((v,i,arr)=>arr.indexOf(v)===i).join(', '))} · atualizado em ${new Date(f.atualizadoEm).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}</div>`:''}
-    <div class="mfoot" style="flex-wrap:wrap">${linksExternos(tk, classe)}<div class="sp"></div>${D.ativos[sid]?`<button class="btn" id="btEdAt">Editar ativo</button>`:''}<button class="btn" data-close>Fechar</button></div>`, (mm, close) => {
-    { const md = (mm.classList&&mm.classList.contains('modal'))? mm : (mm.querySelector&&mm.querySelector('.modal')) || document.querySelector('#modalRoot .modal'); if (md) md.style.maxWidth='780px'; }
+    ${!f?`<div class="hint mt">As informações deste ativo ainda não foram buscadas. Elas chegam na próxima atualização automática (ou toque em ↻ Atualizar em Investimentos).</div>`:''}
+    ${sec('Rentabilidade', tabRent)}
+    ${sec(`Preço teto${graham?' e preço justo':''}`, tetoBox, tetoBox?`<span class="sp"></span><label class="hint" style="display:flex;align-items:center;gap:6px;font-weight:400;font-size:12.5px">Rentabilidade desejada <input id="txTeto" inputmode="decimal" style="width:60px;padding:4px 8px" value="${fmtN(getTaxaTeto(),1)}">%</label>`:'')}
+    ${sec('Indicadores fundamentalistas', indicadores, sc?`<span class="hint" style="font-weight:400;font-size:12.5px"> · comparados com a mediana do ${ehFii?'segmento':'setor'}</span>`:'')}
+    ${sec('Dividendos', blocoDiv)}
+    ${sec('Receitas e lucros', blocoRes)}
+    ${sec('Checklist do investidor buy and hold', checklist)}
+    ${sec(ehFii?'Informações sobre o fundo':'Informações sobre a empresa', infos+sobre)}
+    ${sec(ehFii?'Comparando com outros fundos':'Comparando com outras empresas do setor', tabPares)}
+    ${f?`<div class="hint" style="margin-top:12px">Fontes: ${esc((f.fontes||[]).concat(f.fonteDiv?[f.fonteDiv]:[]).concat(f.rent?['Yahoo Finance']:[]).filter((v,i,arr)=>arr.indexOf(v)===i).join(', '))} · atualizado em ${new Date(f.atualizadoEm).toLocaleString('pt-BR',{dateStyle:'short',timeStyle:'short'})}</div>`:''}
+    <div class="mfoot" style="flex-wrap:wrap">${linksExternos(tk, classe)}<div class="sp"></div><button class="btn" data-close>Fechar</button></div>`, (mm, close) => {
+    { const md = (mm.classList&&mm.classList.contains('modal'))? mm : document.querySelector('#modalRoot .modal'); if (md) md.style.maxWidth='860px'; }
+    const caixaPreco = (titulo, valor, sub) => { const mg = preco&&valor? valor/preco-1 : null; return `<div class="card kpi" style="margin:0"><div class="lbl">${titulo}</div><div class="val" style="font-size:20px">${valor? money(valor, moedaDiv):'—'}</div>${mg!=null?`<div class="sub"><span class="pctpill ${mg>=0?'pos':'neg'}">${mg>=0?'▲ ':'▼ '}${pct(mg)}</span> ${mg>=0?'de margem':'acima do teto'}</div>`:''}<div class="hint" style="margin-top:4px">${sub}</div></div>`; };
     const desenhaTeto = () => { const tx = (parseNum($('#txTeto',mm).value)||6)/100; try{ localStorage.setItem('md_taxaTeto', String(tx*100)); }catch(e){}
       $('#boxTeto',mm).innerHTML = [
-        div12>0 ? caixaPreco('Preço teto · últ. 12 meses', div12/tx, `${money(div12,moedaDiv)} por ${classe==='fii'?'cota':'ação'} (${fonte12})`) : '',
-        media5>0 ? caixaPreco('Preço teto · média de 5 anos', media5/tx, `média de ${money(media5,moedaDiv)} por ano (${anos5[4]}–${anos5[0]})${comDado.length<5?` · só ${comDado.length} ano${comDado.length>1?'s':''} com proventos`:''}`) : '',
+        `<div class="card kpi" style="margin:0"><div class="lbl">Preço atual</div><div class="val" style="font-size:20px">${preco!=null?money(preco,moeda):'—'}</div></div>`,
+        media5>0 ? caixaPreco('Preço teto · Bazin', media5/tx, `média de ${money(media5,moedaDiv)} por ano`) : '',
         graham ? caixaPreco('Preço justo · Graham', graham, `LPA ${money(ind.lpa,moedaDiv)} · VPA ${money(ind.vpa,moedaDiv)}`) : '',
-      ].join('');
-    };
+      ].join(''); };
     if ($('#txTeto',mm)){ desenhaTeto(); $('#txTeto',mm).addEventListener('input', desenhaTeto); }
-    if ($('#btEdAt',mm)) $('#btEdAt',mm).onclick = () => { close(); abrirAtivo(sid); };
-    if (anosG.length) setTimeout(()=>chart('chDivAno',{type:'bar',data:{labels:anosG,datasets:[{data:anosG.map(y=>divAno[y]),backgroundColor:anosG.map(y=>+y===ano?cssv('--muted'):cssv('--acc')),borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+money(c.parsed.y,moedaDiv)+(+c.label===ano?' (ano em curso)':'')}}},scales:{x:{ticks:{color:cssv('--muted')},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>money(v,moedaDiv)},grid:{color:cssv('--line')}}}}}),30);
+    setTimeout(()=>{
+      if (anosD.length) chart('chDivAno',{data:{labels:anosD,datasets:[
+          {type:'bar',label:'Proventos por '+(ehFii?'cota':'ação'),data:anosD.map(y=>divAno[y]),backgroundColor:anosD.map(y=>+y===ano?cssv('--muted'):cssv('--acc')),borderRadius:4,yAxisID:'y',order:2},
+          {type:'line',label:'Dividend yield',data:anosD.map(y=>dyAno(y)),borderColor:cssv('--neg'),backgroundColor:cssv('--neg'),pointRadius:3,tension:.3,yAxisID:'y2',order:1}]},
+        options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:cssv('--text'),boxWidth:10}},tooltip:{callbacks:{label:c=>c.dataset.yAxisID==='y2'? ` DY: ${c.parsed.y==null?'—':fmtN(c.parsed.y,2)+'%'}` : ` ${money(c.parsed.y,moedaDiv)}${+c.label===ano?' (ano em curso)':''}`}}},
+          scales:{x:{ticks:{color:cssv('--muted')},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>money(v,moedaDiv)},grid:{color:cssv('--line')}},y2:{position:'right',ticks:{color:cssv('--muted'),callback:v=>v+'%'},grid:{display:false}}}}});
+      const desenhaRes = (modo) => { const src = modo==='trimestral'? (res.trimestral||{}) : resA; const ks=Object.keys(src).sort(); const mo = res.moeda==='USD'?'USD':'BRL';
+        chart('chRes',{type:'bar',data:{labels:ks.map(k=>modo==='trimestral'? k.slice(5)+'/'+k.slice(2,4) : k),datasets:[{label:'Receita',data:ks.map(k=>src[k].receita??null),backgroundColor:cssv('--acc'),borderRadius:4},{label:'Lucro líquido',data:ks.map(k=>src[k].lucro??null),backgroundColor:cssv('--pos'),borderRadius:4}]},
+          options:{maintainAspectRatio:false,plugins:{legend:{labels:{color:cssv('--text'),boxWidth:10}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${abrev(c.parsed.y,mo)}`}}},scales:{x:{ticks:{color:cssv('--muted')},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>abrev(v,mo)},grid:{color:cssv('--line')}}}}}); };
+      if (anosR.length){ desenhaRes('anual'); mm.querySelectorAll('#segRes button').forEach(b=>b.onclick=()=>{ mm.querySelectorAll('#segRes button').forEach(x=>x.classList.toggle('on',x===b)); desenhaRes(b.dataset.v); }); }
+    }, 30);
   });
 }
 
