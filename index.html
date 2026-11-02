@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102170003';
+const APP_BUILD = '20261102170227';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -1845,10 +1845,12 @@ function abrirInfoAtivo(tk){
   const media5 = comDado.length ? anos5.reduce((s,y)=>s+(divAno[y]||0),0)/5 : null;
   const dyAno = y => divAno[y]>0 && precoAno[y]>0 ? divAno[y]/precoAno[y]*100 : null;
   const dyMed5 = comDado.length ? anos5.map(y=>dyAno(y)||0).reduce((s,v)=>s+v,0)/5 : null;
-  if (!Number.isFinite(ind.payout) && ind.dy>0 && ind.pl>0) ind.payout = ind.dy*ind.pl/100;
-  if (!Number.isFinite(ind.roa) && ind.lucro12 && ind.ativo) ind.roa = ind.lucro12/ind.ativo*100;
-  if (!Number.isFinite(ind.plAtivos) && ind.patrimLiq && ind.ativo) ind.plAtivos = ind.patrimLiq/ind.ativo;
-  if (!Number.isFinite(ind.passAtivos) && ind.patrimLiq && ind.ativo) ind.passAtivos = 1-ind.patrimLiq/ind.ativo;
+  Object.keys(ind).forEach(k=>{ if (ind[k]===0 && !['dy','vacancia','cresRec5','cresRec'].includes(k)) delete ind[k]; }); // zero = não se aplica (ex.: bancos)
+  const banco = /banco|intermedi/i.test([st.subsetor,info.subsetor,info.setor,st.segmento].join(' '));
+  if (!Number.isFinite(ind.payout) && ind.dy>0 && ind.pl>0) ind.payout = Math.min(ind.dy*ind.pl, 999);
+  if (!banco){ if (!Number.isFinite(ind.roa) && ind.lucro12 && ind.ativo) ind.roa = ind.lucro12/ind.ativo*100;
+    if (!Number.isFinite(ind.plAtivos) && ind.patrimLiq && ind.ativo) ind.plAtivos = ind.patrimLiq/ind.ativo;
+    if (!Number.isFinite(ind.passAtivos) && ind.patrimLiq && ind.ativo) ind.passAtivos = 1-ind.patrimLiq/ind.ativo; } else delete ind.ativo;
   const res = (f&&f.resultados)||{}, resA = res.anual||{}, anosR = Object.keys(resA).sort();
   const cagr = (campo) => { const ys=anosR.filter(y=>Number.isFinite(resA[y][campo])); if (ys.length<2) return null; const v0=resA[ys[0]][campo], v1=resA[ys[ys.length-1]][campo], n=+ys[ys.length-1]-+ys[0]; return v0>0&&v1>0&&n>0 ? (Math.pow(v1/v0,1/n)-1)*100 : null; };
   ind.cagrLucro = cagr('lucro'); ind.cagrReceita = cagr('receita'); const nAnosR = anosR.length? +anosR[anosR.length-1]-+anosR[0] : 0;
@@ -1858,7 +1860,7 @@ function abrirInfoAtivo(tk){
   const setorTxt = [st.setor||info.setor, st.subsetor||info.subsetor, st.segmento||info.segmento||info.industria||info.categoria].filter(Boolean).filter((v,i,arr)=>arr.indexOf(v)===i).join(' · ');
   const mUSD = ['etf_ext','stock_ext','bdr','cripto'].includes(classe) ? 'USD' : moedaDiv;
   const sec = (titulo, corpo, extra='') => corpo ? `<div class="fsec"><h3>${titulo}${extra}</h3>${corpo}</div>` : '';
-  const cel = (k, l, t, dica) => { const v=ind[k]; if (!Number.isFinite(v)) return ''; const md = med[k]; return `<div class="indcel" ${dica?`title="${esc(dica)}"`:''}><span class="hint">${l}${dica?' ⓘ':''}</span><b>${fmtInd(v,t,t==='M'?mUSD:moedaDiv)}</b>${Number.isFinite(md)&&md!==0?`<span class="hint" style="font-size:11.5px">Setor: ${fmtInd(md,t,moedaDiv)}</span>`:''}</div>`; };
+  const cel = (k, l, t, dica) => { const v=ind[k]; if (!Number.isFinite(v)) return ''; const md = med[k]; return `<div class="indcel" ${dica?`title="${esc(dica)}"`:''}><span class="hint">${l}${dica?' ⓘ':''}</span><b>${fmtInd(v,t,t==='M'?mUSD:moedaDiv)}</b>${Number.isFinite(md)&&md!==0?`<span class="hint" style="font-size:11.5px">${ehFii?'Segmento':'Setor'}: ${fmtInd(md,t,moedaDiv)}</span>`:''}</div>`; };
   const grupo = (titulo, itens) => { const h = itens.map(x=>cel(...x)).join(''); return h ? `<div class="indgrp"><div class="hint" style="font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:11px;margin:10px 0 6px">${titulo}</div><div class="indgrid">${h}</div></div>` : ''; };
   const D_ = IND_DICA;
   const indicadores = ehFii
