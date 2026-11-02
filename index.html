@@ -155,6 +155,8 @@ input[type=date],input[type=month]{-webkit-appearance:none;appearance:none;displ
 input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-and-time-value{text-align:left;margin:0}
 .modal{overflow-x:hidden}
 .modal .row input[type=date],.ddpanel input[type=date]{width:auto;flex:1 1 130px}
+.novaversao{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:70;background:var(--acc);color:#fff;border:0;border-radius:99px;padding:11px 18px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:pointer}
+@media (min-width:761px){.novaversao{bottom:24px}}
 .loading{padding:60px;text-align:center;color:var(--muted)}
 body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:none!important}
 .login{max-width:400px;margin:10vh auto 0}
@@ -232,6 +234,21 @@ const CLASSES = {acao:'Ações',fii:'FIIs',etf:'ETFs BR',bdr:'BDRs',etf_ext:'ETF
 const CLASS_COR = {acao:'#0f766e',fii:'#2563eb',etf:'#7c3aed',bdr:'#ca8a04',etf_ext:'#c2410c',stock_ext:'#db2777',cripto:'#0891b2',outro:'#64748b'};
 const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'Corretora',dinheiro:'Dinheiro',beneficio:'Benefício (VR/VA)',outro:'Outra'};
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
+
+/* ============ versão do app (avisa quando há atualização publicada) ============ */
+const APP_BUILD = '20261102001322';
+async function checarVersao(){
+  try {
+    const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
+    const v = (await r.text()).trim();
+    if (v && APP_BUILD!=='BUILD_STAMP' && v!==APP_BUILD && !document.getElementById('novaVersao')){
+      const b=document.createElement('button'); b.id='novaVersao'; b.className='novaversao'; b.textContent='Nova versão disponível · toque para atualizar';
+      b.onclick=()=>location.replace(location.pathname+'?v='+encodeURIComponent(v)+location.hash); document.body.appendChild(b);
+    }
+  } catch(e){}
+}
+setTimeout(checarVersao, 4000); setInterval(checarVersao, 5*60*1000);
+document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checarVersao(); });
 
 /* ============ dados ============ */
 const SB_URL = 'https://cocaixvrkipbzfvjzykd.supabase.co';
