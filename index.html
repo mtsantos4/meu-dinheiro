@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102021609';
+const APP_BUILD = '20261102022512';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -285,7 +285,7 @@ document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checarV
 /* ============ dados ============ */
 const SB_URL = 'https://cocaixvrkipbzfvjzykd.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvY2FpeHZya2lwYnpmdmp6eWtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1MTgyODEsImV4cCI6MjEwOTA5NDI4MX0.sB5TrWysO8Pu0Uf4TFHQx46Qh6o_PFov7dNWu4V2H4I';
-const COLS = ['contas','cartoes','categorias','transacoes','ativos','operacoes','mercado','proventos','config'];
+const COLS = ['contas','cartoes','categorias','transacoes','ativos','operacoes','mercado','proventos','config','recorrencias'];
 const D = {}, U = {}; COLS.forEach(c => { D[c] = {}; U[c] = {}; });   // D = visão combinada; U = dados do usuário
 const G = { mercado:{}, proventos:{}, config:{}, historico:{}, indices:{}, setores:{} };                      // dados de mercado (rotina diária)
 const loaded = {}; let store = null, sb = null, userId = null, userEmail = '', userNome = '', canWrite = true, dbFail = false, started = null;
@@ -549,7 +549,95 @@ async function syncProventos(){
       await put('transacoes', tid, {data:p.dataPagamento, descricao:`${TIPO_PROV[p.tipo]||'Provento'} ${p.ticker}`, valor: Math.round(valor*100)/100, tipo:'receita', categoriaId:cat, contaId:conta.id, pago:true, conferir:true, origem:'provento', ref:p.id, obs:`${fmtQ(p.qtd)} cotas × ${money(+p.valor,p.moeda)} (data-com ${fmtData(p.dataCom)})`, criadoEm:new Date().toISOString()});
     }
   } finally { syncing=false; }
+  gerarRecorrencias();
 }
+/* ============ Lançamentos fixos (recorrências) ============ */
+const HORIZONTE_FIXAS = 6; // meses à frente
+const recIdMes = (rid, ym) => 'rec_'+rid+'_'+ym;
+function txDaRecorrencia(r, ym){
+  const dia = Math.min(Math.max(1, +r.dia||1), +ultimoDia(ym).slice(8)); const data = `${ym}-${pad(dia)}`;
+  const tx = {tipo:r.tipo||'despesa', valor:+r.valor||0, data, descricao:r.descricao||'', categoriaId:r.categoriaId||null, contaId:r.cartaoId?null:(r.contaId||null), cartaoId:r.cartaoId||null, recorrenciaId:r.id, origem:'fixa', obs:r.obs||'', criadoEm:new Date().toISOString()};
+  if (r.cartaoId){ tx.faturaMes = faturaMesPara(D.cartoes[r.cartaoId]||{fechamento:1,vencimento:10}, data); tx.pago = true; }
+  else tx.pago = r.autoPago!==false ? data<=todayISO() : false;
+  return tx;
+}
+let gerandoFixas=false;
+async function gerarRecorrencias(){
+  if (gerandoFixas || !canWrite || !store || !COLS.every(k=>loaded[k])) return;
+  gerandoFixas=true;
+  try {
+    const hoje=todayISO(), atual=monthOf(hoje), limite=addMonths(atual, HORIZONTE_FIXAS); const novos=[];
+    for (const r of list('recorrencias')){
+      if (r.ativa===false || !r.inicio) continue;
+      const fim = r.fim && r.fim<limite ? r.fim : limite;
+      for (const ym of mesesEntre(r.inicio, fim)){
+        const id=recIdMes(r.id, ym); const ex=D.transacoes[id];
+        if (!ex){ novos.push(['transacoes', id, txDaRecorrencia(r, ym)]); continue; }
+        if (!ex.excluida && !ex.cartaoId && !ex.pago && !ex.editado && r.autoPago!==false && ex.data<=hoje) novos.push(['transacoes', id, {...ex, pago:true}]);
+      }
+    }
+    if (novos.length) await putMany(novos);
+  } catch(e){ console.error(e); } finally { gerandoFixas=false; }
+}
+// aplica a edição da fixa nos lançamentos futuros (nunca mexe no passado nem nos já pagos/editados à mão)
+async function aplicarFixaNoFuturo(r, aPartirDe){
+  const hoje=todayISO(); const desde = aPartirDe || monthOf(hoje); const ops=[], dels=[];
+  for (const t of list('transacoes').filter(t=>t.recorrenciaId===r.id)){
+    const ym = t.id.slice(-7);
+    if (ym < desde || t.excluida || t.editado) continue;
+    if (!t.cartaoId && t.pago && t.data<=hoje) continue;
+    if (r.ativa===false || (r.fim && ym>r.fim) || ym<r.inicio){ dels.push(t.id); continue; }
+    const novo = txDaRecorrencia(r, ym); novo.criadoEm=t.criadoEm||novo.criadoEm;
+    ops.push(['transacoes', t.id, novo]);
+  }
+  if (ops.length) await putMany(ops);
+  if (dels.length) await delMany('transacoes', dels);
+  await gerarRecorrencias();
+  return ops.length + dels.length;
+}
+function abrirFixa(id, prefill){
+  const r = id ? {...D.recorrencias[id]} : Object.assign({tipo:'despesa', dia:+todayISO().slice(8), inicio:monthOf(todayISO()), autoPago:true, ativa:true}, prefill||{});
+  const contas=list('contas').filter(c=>!c.arquivada||c.id===r.contaId), cartoes=list('cartoes');
+  const meio = r.cartaoId ? 'c:'+r.cartaoId : 'a:'+(r.contaId||(contas[0]||{}).id||'');
+  modal(`<h2>${id?'Editar lançamento fixo':'Novo lançamento fixo'}</h2>
+    <div class="seg" id="segFx" style="margin-bottom:14px">${[['despesa','Despesa'],['receita','Receita']].map(([v,n])=>`<button type="button" data-v="${v}" class="${r.tipo===v?'on':''}">${n}</button>`).join('')}</div>
+    <form class="frm" id="ffx">
+      <label class="full">Valor<input name="valor" value="${r.valor!=null?fmtN(+r.valor,2):''}" style="font-size:20px;font-weight:600"></label>
+      <label class="full">Descrição<input name="descricao" value="${esc(r.descricao||'')}" placeholder="Ex.: Aluguel, Internet, Netflix"></label>
+      <label>Categoria<select name="categoriaId"></select></label>
+      <label>Conta ou cartão<select name="meio">${contas.map(c=>`<option value="a:${c.id}" ${meio==='a:'+c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}${cartoes.map(c=>`<option value="c:${c.id}" ${meio==='c:'+c.id?'selected':''}>💳 ${esc(c.nome)}</option>`).join('')}</select></label>
+      <label>Dia do mês<input name="dia" type="number" min="1" max="31" value="${+r.dia||1}"></label>
+      <label>Começa em<input name="inicio" type="month" value="${r.inicio}"></label>
+      <label>Termina em (opcional)<input name="fim" type="month" value="${r.fim||''}"></label>
+      <label class="chk full f-auto"><input type="checkbox" name="autoPago" ${r.autoPago!==false?'checked':''}> Marcar como pago automaticamente na data</label>
+      ${id?`<label class="chk full"><input type="checkbox" name="ativa" ${r.ativa!==false?'checked':''}> Ativa (desmarque para pausar: os lançamentos futuros não pagos são removidos)</label>`:''}
+      <div class="full hint">O app mantém os próximos ${HORIZONTE_FIXAS} meses lançados e cria os seguintes sozinho, mês a mês. Ao mudar valor, dia, conta ou categoria, só os lançamentos a partir deste mês que ainda não foram pagos ou editados à mão são atualizados. O passado nunca é alterado.</div>
+    </form>
+    <div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`, (m,close)=>{
+    const F=$('#ffx',m); let tipo=r.tipo; const mk=mascara(F.valor, ()=>F.meio.value.startsWith('a:')?((D.contas[F.meio.value.slice(2)]||{}).moeda||'BRL'):'BRL');
+    const ref=()=>{ const cur=F.categoriaId.value||r.categoriaId; F.categoriaId.innerHTML=catOptions(cur, tipo); $('.f-auto',m).style.display=F.meio.value.startsWith('c:')?'none':''; mk.prefixo(); };
+    m.querySelectorAll('#segFx button').forEach(b=>b.onclick=()=>{ tipo=b.dataset.v; m.querySelectorAll('#segFx button').forEach(x=>x.classList.toggle('on',x===b)); F.categoriaId.value=''; ref(); });
+    F.meio.onchange=ref; ref();
+    $('#ok',m).onclick=async()=>{ const v=parseNum(F.valor.value); if(!v){ toast('Informe o valor'); return; } if(!F.inicio.value){ toast('Informe o mês de início'); return; }
+      const mv=F.meio.value; const rid=id||newId();
+      const d={tipo, valor:v, descricao:F.descricao.value.trim(), categoriaId:F.categoriaId.value||null, contaId:mv.startsWith('a:')?mv.slice(2):null, cartaoId:mv.startsWith('c:')?mv.slice(2):null, dia:Math.max(1,Math.min(31,+F.dia.value||1)), inicio:F.inicio.value, fim:F.fim.value||null, autoPago:F.autoPago.checked, ativa: F.ativa? F.ativa.checked : true, criadoEm:r.criadoEm||new Date().toISOString()};
+      $('#ok',m).disabled=true; await put('recorrencias', rid, d);
+      const n = id ? await aplicarFixaNoFuturo({...d, id:rid}) : (await gerarRecorrencias(), 0);
+      close(); toast(id? `Lançamento fixo atualizado${n?` · ${n} lançamentos futuros ajustados`:''}` : 'Lançamento fixo criado'); };
+    if ($('#del',m)) $('#del',m).onclick=async()=>{ const i=await escolher('Excluir lançamento fixo', ['Excluir a fixa e os lançamentos futuros não pagos (mantém o histórico)','Excluir a fixa e TODOS os lançamentos dela']); if(i<0) return;
+      const ts=list('transacoes').filter(t=>t.recorrenciaId===id); const hoje=todayISO();
+      const apagar = i===1 ? ts.map(t=>t.id) : ts.filter(t=>!(t.pago && t.data<=hoje) && !t.editado).map(t=>t.id);
+      await delMany('transacoes', apagar); await del('recorrencias', id); close(); toast('Lançamento fixo excluído'); };
+  });
+}
+function vFixas(){
+  const rs=list('recorrencias').sort((a,b)=>(a.ativa===false)-(b.ativa===false)||(+a.dia||0)-(+b.dia||0));
+  const tot = t => rs.filter(r=>r.ativa!==false && r.tipo===t && (!r.fim || r.fim>=monthOf(todayISO()))).reduce((s,r)=>s+toBRL(+r.valor||0, r.contaId?((D.contas[r.contaId]||{}).moeda||'BRL'):'BRL'),0);
+  return `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px"><div class="hint" style="flex:1;min-width:220px">Despesas e receitas que se repetem todo mês. O app lança os próximos ${HORIZONTE_FIXAS} meses e vai criando os seguintes sozinho.</div><button class="btn pri" data-act="novaFixa">+ Lançamento fixo</button></div>
+    <div class="kpimini" style="margin:0 0 12px"><div class="card"><div class="lbl">Despesas fixas / mês</div><div class="val neg">${money(tot('despesa'))}</div></div><div class="card"><div class="lbl">Receitas fixas / mês</div><div class="val pos">${money(tot('receita'))}</div></div><div class="card"><div class="lbl">Saldo fixo / mês</div><div class="val">${money(tot('receita')-tot('despesa'))}</div></div></div>
+    ${rs.length? rs.map(r=>{ const enc = r.ativa===false || (r.fim && r.fim<monthOf(todayISO())); return `<div class="acct" style="cursor:pointer;${enc?'opacity:.55':''}" data-act="editFixa" data-id="${r.id}"><span class="dot" style="background:${catCor(r.categoriaId)};width:12px;height:12px"></span><div style="flex:1;min-width:0"><div class="nm">${esc(r.descricao||catNome(r.categoriaId))} ${enc?'<span class="pill">encerrada</span>':''}</div><div class="hint">Todo dia ${r.dia} · ${esc(catNome(r.categoriaId))} · ${r.cartaoId?'💳 '+esc(cartaoNome(r.cartaoId)):esc(contaNome(r.contaId))}${r.fim?` · até ${mesCurto(r.fim)}`:''}</div></div><div class="num ${r.tipo==='receita'?'pos':'neg'}" style="font-weight:600">${r.tipo==='receita'?'+':'−'}${money(+r.valor||0, r.contaId?((D.contas[r.contaId]||{}).moeda||'BRL'):'BRL')}</div></div>`; }).join('') : '<div class="empty">Nenhum lançamento fixo. Crie um aqui ou marque "Todo mês (fixo)" ao lançar.</div>'}`;
+}
+
 function catProventos(){
   const c = list('categorias').find(c=>c.tipo==='receita' && /provent|dividend|rendiment/i.test(c.nome));
   if (c) return c.id;
@@ -689,6 +777,7 @@ const ACTS = {
     toast('Desfazendo…');
     if (mov.length) await putMany(mov.map(t=>{ const a=t.antes||{}; const d={...t}; delete d.conciliacao; delete d.antes; delete d.conciliadoEm; d.contaId=a.contaId||null; d.cartaoId=a.cartaoId||null; d.faturaMes=a.faturaMes||null; d.pago=a.pago!==undefined?a.pago:true; return ['transacoes', t.id, d]; }));
     await delMany('transacoes', ids); toast('Desfeito'); },
+  novaFixa: ()=>abrirFixa(), editFixa: id=>abrirFixa(id), irFixas: ()=>{ ui.cfgTab='fixas'; go('ajustes'); },
   toggleArq: ()=>{ ui.verArquivadas=!ui.verArquivadas; render(); }, salvarCfg: salvarCfg, sair: ()=>sair(), mudarNome: ()=>pedirNome(), atualizarMercado: ()=>dispararAtualizacao(), importar: abrirImport, backup: copiarBackup, restaurar: abrirRestaurar,
   goContas: ()=>go('contas'), goCarteira: ()=>{ ui.cartTab='proventos'; go('carteira'); }, goTx: ()=>go('transacoes'),
   togglePago: async id=>{ const t=D.transacoes[id]; await patch('transacoes', id, {pago:!t.pago}); }
@@ -811,6 +900,7 @@ function vTransacoes(){
   <header class="top"><h1>Transações</h1><div class="sp"></div>${ui.faturaVer? `<span class="pill acc">${esc(titulo)}</span><button class="btn sm" id="sairFat">Voltar ao mês</button>` : (f.de||f.ate)? '' : monthNav()}<button class="btn pri hide-m" data-act="novaTx">+ Lançamento</button></header>
   <div class="toolbar">
     <input id="fq" placeholder="Buscar…" value="${esc(f.q)}">
+    <button class="btn" data-act="irFixas" title="Despesas e receitas fixas">↻ Fixas</button>
     <div class="dd"><button class="btn" id="btFiltros">Filtros${nAtivos?` <span class="pill acc" style="padding:0 7px">${nAtivos}</span>`:''} ▾</button><div class="ddpanel" id="ddPanel" hidden></div></div>
     <select id="fordem" title="Ordenar">${[['desc','↓ Recentes'],['asc','↑ Antigas'],['valor','$ Maior valor']].map(([v,n])=>`<option value="${v}" ${(f.ordem||'desc')===v?'selected':''}>${n}</option>`).join('')}</select>
   </div>
@@ -1225,7 +1315,8 @@ afterRender.carteira = () => {
 /* ---------- Ajustes ---------- */
 function vAjustes(){
   const c = cfg(); const tab=ui.cfgTab; let body='';
-  if (tab==='categorias'){
+  if (tab==='fixas'){ body = vFixas(); }
+  else if (tab==='categorias'){
     const cats=list('categorias').sort((a,b)=>a.nome.localeCompare(b.nome));
     body = ['despesa','receita'].map(tp=>`<h3 style="margin-top:6px">${tp==='despesa'?'Despesas':'Receitas'}</h3>${cats.filter(x=>x.tipo===tp).map(x=>`<div class="acct" style="cursor:pointer;padding:8px 4px" data-act="editCat" data-id="${x.id}"><span class="dot" style="background:${x.cor}"></span><span style="flex:1">${esc(x.nome)}${x.investimento?' <span class="pill acc">investimento</span>':''}</span><span class="hint">${txAtivas().filter(t=>t.categoriaId===x.id).length} lançamentos</span></div>`).join('')||'<div class="hint">Nenhuma</div>'}`).join('') + `<button class="btn mt" data-act="novaCat">+ Categoria</button>`;
   } else if (tab==='geral'){
@@ -1248,7 +1339,7 @@ function vAjustes(){
       <div class="hint mt">${COLS.map(k=>`${k}: ${list(k).length}`).join(' · ')}</div>`;
   }
   return `<header class="top"><h1>Ajustes</h1></header>
-  <div class="tabs" style="margin-bottom:14px">${[['categorias','Categorias'],['geral','Geral'],['dados','Importar e backup']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cfgTab" data-id="${k}">${n}</button>`).join('')}</div>
+  <div class="tabs" style="margin-bottom:14px">${[['fixas','Lançamentos fixos'],['categorias','Categorias'],['geral','Geral'],['dados','Importar e backup']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cfgTab" data-id="${k}">${n}</button>`).join('')}</div>
   <div class="card">${body}</div>`;
 }
 async function salvarCfg(){
@@ -1335,7 +1426,7 @@ function abrirTransacao(id){
       </div>
     </div>
     <label class="f-fat" style="display:none">Fatura<input name="faturaMes" type="month" value="${t.faturaMes||''}"></label>
-    <label class="f-rep">${id&&t.grupo?'Repetição':'Repetir'}<select name="rep" ${id?'disabled':''}><option value="">Não repetir</option><option value="parc">Parcelado</option><option value="fixo">Todo mês (fixo)</option></select></label>
+    <label class="f-rep">${id&&t.grupo?'Repetição':'Repetir'}<select name="rep" ${id?'disabled':''}><option value="">Não repetir</option><option value="parc">Parcelado</option><option value="fixo">Todo mês (fixo, sem fim)</option></select></label>
     <label class="f-n" style="display:none">Quantidade<input name="n" type="number" min="2" max="120" value="2"></label>
     <label class="chk f-pago"><input type="checkbox" name="pago" ${t.pago!==false?'checked':''}> Pago / recebido</label>
     ${t.conferir?`<label class="chk"><input type="checkbox" name="conferido"> Marcar como conferido</label>`:''}
@@ -1365,7 +1456,7 @@ function abrirTransacao(id){
       $('.f-fat',m).style.display = isCard && tp!=='transferencia' ? '':'none';
       $('.f-pago',m).style.display = isCard ? 'none':'';
       $('.f-rep',m).style.display = (tp==='transferencia'||id)?'none':'';
-      $('.f-n',m).style.display = F.rep.value && !id ? '':'none';
+      $('.f-n',m).style.display = F.rep.value==='parc' && !id ? '':'none';
       const cur = F.categoriaId.value || t.categoriaId; F.categoriaId.innerHTML = catOptions(cur, tp==='receita'?'receita':'despesa');
       if (isCard && !F.faturaMes.dataset.touched){ const k=D.cartoes[mv.slice(2)]; if(k) F.faturaMes.value = (id && t.cartaoId===k.id && t.faturaMes) ? t.faturaMes : faturaMesPara(k, F.data.value||todayISO()); }
     };
@@ -1404,6 +1495,17 @@ function abrirTransacao(id){
       if (!id) base.criadoEm = new Date().toISOString();
       const btn=$('#btSave',m); btn.disabled=true;
       try {
+        if (id && t.recorrenciaId && D.recorrencias[t.recorrenciaId]){
+          const i = await escolher('Alterar lançamento fixo', ['Só este mês','Este mês e os próximos (atualiza a despesa fixa)']);
+          if (i<0){ btn.disabled=false; return; }
+          if (i===0){ await put('transacoes', id, {...base, editado:true}); close(); toast('Lançamento salvo'); return; }
+          const r0=D.recorrencias[t.recorrenciaId];
+          const r1={...r0, tipo:base.tipo, valor, descricao:base.descricao, categoriaId:base.categoriaId||null, contaId:base.contaId||null, cartaoId:base.cartaoId||null, dia:+base.data.slice(8)}; delete r1.id;
+          await put('recorrencias', t.recorrenciaId, r1);
+          await put('transacoes', id, {...txDaRecorrencia({...r1,id:t.recorrenciaId}, id.slice(-7)), pago: base.pago, conferir:false, criadoEm:t.criadoEm});
+          const n = await aplicarFixaNoFuturo({...r1, id:t.recorrenciaId}, addMonths(id.slice(-7),1));
+          close(); toast(`Fixa atualizada · ${n+1} lançamentos ajustados`); return;
+        }
         if (id && t.grupo && txAtivas().filter(x=>x.grupo===t.grupo).length>1){
           const ehParc = !!t.parcela;
           const i = await escolher(ehParc?'Alterar compra parcelada':'Alterar lançamento repetido', [ehParc?'Só esta parcela':'Só este', ehParc?'Esta e as próximas parcelas':'Este e os próximos', ehParc?'Todas as parcelas':'Todos da série']);
@@ -1426,6 +1528,11 @@ function abrirTransacao(id){
           }
         }
         else if (id){ await put('transacoes', id, base); }
+        else if (F.rep.value==='fixo'){
+          const rid=newId(); const k={...base};
+          await put('recorrencias', rid, {tipo:k.tipo, valor, descricao:k.descricao, categoriaId:k.categoriaId||null, contaId:k.contaId||null, cartaoId:k.cartaoId||null, dia:+k.data.slice(8), inicio:monthOf(k.data), fim:null, autoPago:true, ativa:true, obs:k.obs||'', criadoEm:new Date().toISOString()});
+          await gerarRecorrencias(); close(); toast(`Lançamento fixo criado · os próximos ${HORIZONTE_FIXAS} meses já estão lançados`); return;
+        }
         else if (F.rep.value){
           const n = Math.max(2, Math.min(120, parseInt(F.n.value)||2)); const grupo=uid();
           const vParc = F.rep.value==='parc' ? Math.round(valor/n*100)/100 : valor;
@@ -1440,6 +1547,14 @@ function abrirTransacao(id){
       } catch(e){ btn.disabled=false; }
     };
     if ($('#btDel',m)) $('#btDel',m).onclick = async () => {
+      if (t.recorrenciaId && D.recorrencias[t.recorrenciaId]){
+        const i = await escolher('Excluir lançamento fixo', ['Só este mês','Encerrar a fixa (este mês e os próximos)']); if (i<0) return;
+        if (i===0){ await patch('transacoes', id, {excluida:true}); close(); toast('Excluído só este mês'); return; }
+        const ym=id.slice(-7); const r0=D.recorrencias[t.recorrenciaId]; const r1={...r0, fim:addMonths(ym,-1)}; delete r1.id;
+        await put('recorrencias', t.recorrenciaId, r1); await aplicarFixaNoFuturo({...r1, id:t.recorrenciaId}, ym);
+        if (D.transacoes[id] && !D.transacoes[id].excluida) await del('transacoes', id);
+        close(); toast('Fixa encerrada'); return;
+      }
       let quais = [id];
       if (t.grupo){ const i = await escolher('Excluir lançamento repetido', ['Só este','Este e os próximos','Todos da série']); if (i<0) return; const g=txAtivas().filter(x=>x.grupo===t.grupo); quais = i===0?[id]: i===1? g.filter(x=>x.data>=t.data).map(x=>x.id) : g.map(x=>x.id); }
       else if (!(await confirmar('Excluir este lançamento?'))) return;
