@@ -30,7 +30,7 @@
 html,body{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior-y:none;margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 button,input,select,textarea{font:inherit;color:inherit}
 .app{display:flex;min-height:100vh}
-nav.side{width:220px;flex:none;padding:20px 12px;border-right:1px solid var(--line);background:var(--panel);position:sticky;top:0;height:100vh}
+nav.side{width:220px;flex:none;padding:20px 12px;border-right:1px solid var(--line);background:var(--panel);position:sticky;top:0;height:100vh;display:flex;flex-direction:column;box-sizing:border-box}.sidefoot{margin-top:auto;border-top:1px solid var(--line);padding-top:10px}.sideuser{padding:4px 12px 8px;display:flex;flex-direction:column;min-width:0}.sideuser b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sideuser span{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brand{font-weight:700;font-size:17px;padding:4px 12px 20px;display:flex;gap:8px;align-items:center}
 .brand i{width:26px;height:26px;border-radius:8px;background:var(--acc);display:inline-block;position:relative}
 .brand i:after{content:"";position:absolute;inset:7px;border:2.5px solid var(--panel);border-radius:50%}
@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102144240';
+const APP_BUILD = '20261102151807';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -476,7 +476,7 @@ function pedirNome(){
     $('#ok',m).onclick = async () => { const n=$('#fnome',m).nome.value.trim(); if(!n) return; const {error}=await sb.auth.updateUser({data:{nome:n}}); if(error) return toast(error.message); userNome=n; close(); render(); };
   });
 }
-async function sair(){ await sb.auth.signOut(); }
+async function sair(){ if (!(await confirmar('Sair desta conta?'))) return; try{ await sb.auth.signOut(); }catch(e){} location.replace(location.pathname); }
 
 /* ============ cálculos: carteira ============ */
 function opsDo(ticker){ return list('operacoes').filter(o=>o.ticker===ticker).sort((a,b)=> (a.data+(a.criadoEm||'')).localeCompare(b.data+(b.criadoEm||''))); }
@@ -785,7 +785,8 @@ const ICONS = {
 const NAMES = {inicio:'Início',transacoes:'Transações',contas:'Contas e cartões',carteira:'Investimentos',ajustes:'Ajustes'};
 const SHORT = {inicio:'Início',transacoes:'Transações',contas:'Contas',carteira:'Carteira',ajustes:'Ajustes'};
 function renderNav(){
-  $('#side').innerHTML = `<div class="brand"><i></i>Meu Dinheiro</div>` + VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${NAMES[v]}</button>`).join('');
+  $('#side').innerHTML = `<div class="brand"><i></i>Meu Dinheiro</div>` + VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${NAMES[v]}</button>`).join('') + `<div class="sidefoot"><div class="sideuser"><b>${esc(userNome||'')}</b><span>${esc(userEmail||'')}</span></div><button class="navbtn" id="btSair"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>Sair</button></div>`;
+  const bs=$('#btSair'); if (bs) bs.onclick=()=>sair();
   $('#bottom').innerHTML = VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${SHORT[v]}</button>`).join('');
   document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>go(b.dataset.v));
 }
@@ -1401,7 +1402,7 @@ function vAjustes(){
       <h3 class="mt">Cópia de segurança</h3><div class="hint" style="margin-bottom:10px">Copia todos os seus dados em formato JSON. Cole num arquivo de texto e guarde.</div><div class="row"><button class="btn" data-act="backup">Copiar backup</button><button class="btn" data-act="restaurar">Restaurar de um backup</button></div>
       <div class="hint mt">${COLS.map(k=>`${k}: ${list(k).length}`).join(' · ')}</div>`;
   }
-  return `<header class="top"><h1>Ajustes</h1></header>
+  return `<header class="top"><h1>Ajustes</h1><div class="sp"></div><button class="btn sm so-m" data-act="sair">Sair da conta</button></header>
   <div class="tabs" style="margin-bottom:14px">${[['fixas','Lançamentos fixos'],['categorias','Categorias'],['geral','Geral'],['dados','Importar e backup']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cfgTab" data-id="${k}">${n}</button>`).join('')}</div>
   <div class="card">${body}</div>`;
 }
@@ -2129,7 +2130,7 @@ async function copiarBackup(){
 function abrirRestaurar(){
   modal(`<h2>Restaurar backup</h2><div class="frm"><label class="full">Arquivo .json<input type="file" id="fj" accept=".json,.txt"></label><div class="full hint">Os dados do backup são somados aos atuais. Itens com o mesmo identificador são substituídos.</div></div><div class="mfoot"><div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Restaurar</button></div>`,(m,close)=>{
     $('#ok',m).onclick=async()=>{ const f=$('#fj',m).files[0]; if(!f) return; let js; try{ js=JSON.parse(await f.text()); }catch(e){ toast('Arquivo inválido'); return; }
-      const items=[]; for (const c of COLS){ for (const [id,doc] of Object.entries(js[c]||{})){ if (c==='config' && id!=='geral') continue; if (c==='mercado') continue; items.push([c,id,doc]); } } const b=$('#ok',m); b.disabled=true; b.textContent='Restaurando…'; await putMany(items); close(); toast(`${items.length} itens restaurados`); };
+      const items=[]; for (const c of COLS){ for (const [id,doc] of Object.entries(js[c]||{})){ if (c==='config' && id!=='geral') continue; if (c==='mercado') continue; items.push([c,id,doc]); } } const b=$('#ok',m); b.disabled=true; b.textContent='Restaurando…'; await putMany(items); close(); toast(`${items.length} itens restaurados`); gerarRecorrencias(); scheduleSync(); if (items.some(([c])=>c==='ativos')) dispararAtualizacao().catch(()=>{}); };
   });
 }
 
