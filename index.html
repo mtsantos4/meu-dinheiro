@@ -167,6 +167,16 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 .bloco.fechado .seta{transform:rotate(-90deg)}
 .bloco.fechado .blococorpo{display:none}
 .blococorpo{padding:0 8px 4px}
+/* barras de rolagem finas e discretas, na cor do app */
+*{scrollbar-width:thin;scrollbar-color:rgba(45,212,191,.35) transparent}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(45,212,191,.28);border-radius:99px}
+::-webkit-scrollbar-thumb:hover{background:rgba(45,212,191,.55)}
+::-webkit-scrollbar-button{display:none;width:0;height:0}
+::-webkit-scrollbar-corner{background:transparent}
+.donutleg,.ddpanel,.modal,.tblwrap{scrollbar-gutter:stable}
+.donutleg{padding-right:6px}
 .rtab td,.rtab th{padding:8px 6px;font-size:13px}
 .loading{padding:60px;text-align:center;color:var(--muted)}
 body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:none!important}
@@ -247,7 +257,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102010325';
+const APP_BUILD = '20261102010344';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
