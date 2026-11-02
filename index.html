@@ -143,6 +143,8 @@ nav.bottom{display:none}
 .chip button{border:0;background:none;color:inherit;font-size:16px;line-height:1;cursor:pointer;padding:0 5px}
 .kpimini{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}
 .kpimini .card{padding:8px 12px;border-radius:12px}
+.kpimini.k4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.kpimini .sub{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpimini .lbl{font-size:11.5px;color:var(--muted);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpimini .val{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* evita campos (data, mês, listas) saindo da tela, principalmente no iPhone */
@@ -172,6 +174,9 @@ body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:no
   .stickytop{margin:-16px -14px 10px;padding:12px 14px 8px}
   .stickytop header.top{margin-bottom:8px}.stickytop header.top h1{font-size:19px}
   .kpimini .val{font-size:14px}.kpimini .card{padding:7px 9px}
+  .kpimini.k4{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpimini .sub{display:none}
+  .stickytop .tabs{width:100%}
   .toolbar select{max-width:136px;padding:8px 6px}
   /* no celular, os filtros abrem como uma folha que sobe de baixo, dentro da tela */
   .ddpanel{position:fixed;left:0;right:0;bottom:0;top:auto;width:auto;max-width:none;max-height:72vh;border-radius:18px 18px 0 0;padding:8px 8px calc(14px + env(safe-area-inset-bottom));z-index:60;box-shadow:0 -10px 40px rgba(0,0,0,.35)}
@@ -855,15 +860,17 @@ function vCarteira(){
     body = cart.ativos.length? `<div class="grid g2"><div class="chartbox" style="height:260px"><canvas id="chAloc"></canvas></div><div>${Object.entries(alocacao(cart)).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--line)"><span class="dot" style="background:${CLASS_COR[k]}"></span><span style="flex:1">${CLASSES[k]}</span><span class="num">${money(v)}</span><span class="num muted" style="width:60px">${fmtN(v/cart.total*100,1)}%</span></div>`).join('')}</div></div>` : '<div class="empty">Sem ativos</div>';
   }
   return `
+  <div class="stickytop">
   <header class="top"><h1>Investimentos</h1><div class="sp"></div><button class="btn" data-act="atualizarMercado" ${atualizando?'disabled':''}>${atualizando?'Atualizando…':'↻ Atualizar cotações'}</button><button class="btn hide-m" data-act="novoAtivo">+ Ativo</button><button class="btn pri hide-m" data-act="novaOp">+ Compra / venda</button></header>
-  <div class="grid g4">
-    <div class="card kpi"><div class="lbl">Patrimônio investido</div><div class="val">${money(cart.total)}</div><div class="sub">Custo ${money(cart.custo)}</div></div>
-    <div class="card kpi"><div class="lbl">Resultado</div><div class="val ${cart.resultado>=0?'pos':'neg'}">${money(cart.resultado)}</div><div class="sub ${cart.resultado>=0?'pos':'neg'}">${pct(cart.custo?cart.resultado/cart.custo:0)}</div></div>
-    <div class="card kpi"><div class="lbl">Proventos 12 meses</div><div class="val">${money(rec12)}</div><div class="sub">média ${money(rec12/12)}/mês</div></div>
-    <div class="card kpi"><div class="lbl">A receber</div><div class="val">${money(aRec)}</div><div class="sub">${atualizando? 'Buscando cotações e proventos…' : upd? 'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Aguardando 1ª atualização'} · US$ ${fmtN(c.usdbrl,2)}</div></div>
+  <div class="kpimini k4">
+    <div class="card"><div class="lbl">Patrimônio investido</div><div class="val">${money(cart.total)}</div><div class="sub">Custo ${money(cart.custo)}</div></div>
+    <div class="card"><div class="lbl">Resultado</div><div class="val ${cart.resultado>=0?'pos':'neg'}">${money(cart.resultado)}</div><div class="sub ${cart.resultado>=0?'pos':'neg'}">${pct(cart.custo?cart.resultado/cart.custo:0)}</div></div>
+    <div class="card"><div class="lbl">Proventos 12 meses</div><div class="val">${money(rec12)}</div><div class="sub">média ${money(rec12/12)}/mês</div></div>
+    <div class="card"><div class="lbl">A receber</div><div class="val">${money(aRec)}</div><div class="sub">${atualizando? 'Buscando cotações e proventos…' : upd? 'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Aguardando 1ª atualização'} · US$ ${fmtN(c.usdbrl,2)}</div></div>
   </div>
-  <div class="row mt" style="justify-content:space-between;flex-wrap:wrap"><div class="tabs">${[['ativos','Carteira'],['alocacao','Alocação'],['proventos','Proventos'],['operacoes','Operações'],['cadastro','Ativos cadastrados']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>${tab==='proventos'?'<button class="btn sm" data-act="novoProv">+ Provento manual</button>':''}</div>
-  <div class="card mt">${body}</div>`;
+  <div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px;gap:8px"><div class="tabs">${[['ativos','Carteira'],['alocacao','Alocação'],['proventos','Proventos'],['operacoes','Operações'],['cadastro','Ativos cadastrados']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>${tab==='proventos'?'<button class="btn sm" data-act="novoProv">+ Provento manual</button>':''}</div>
+  </div>
+  <div class="card">${body}</div>`;
 }
 function alocacao(cart){ const o={}; cart.ativos.forEach(r=>o[r.classe||'outro']=(o[r.classe||'outro']||0)+r.valorBRL); return o; }
 afterRender.carteira = () => {
