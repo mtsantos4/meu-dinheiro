@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102022512';
+const APP_BUILD = '20261102112055';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -670,7 +670,33 @@ function saldoConta(id, {previsto=false, ate=null}={}){
     }
     if (t.tipo==='transferencia' && t.contaDestinoId===id) s += (t.valorDestino!=null? +t.valorDestino : v);
   }
+  if (previsto && ate) s -= faturasAPagar(id, ate).reduce((x,f)=>x+f.aberto,0);
   return s;
+}
+// faturas em aberto dos cartões pagos por esta conta, com vencimento entre o início do mês atual e a data limite
+function faturasAPagar(contaId, ate){
+  const out=[]; const ini = monthOf(todayISO())+'-01';
+  for (const k of list('cartoes').filter(k=>k.contaId===contaId)){
+    const meses = new Set(txAtivas().filter(t=>t.cartaoId===k.id && t.faturaMes).map(t=>t.faturaMes));
+    for (const ym of meses){ const venc = `${ym}-${pad(Math.min(+k.vencimento||10, +ultimoDia(ym).slice(8)))}`;
+      if (venc < ini || venc > ate) continue; const f=fatura(k.id, ym); const aberto=f.total-f.pago;
+      if (aberto>0.005) out.push({cartaoId:k.id, ym, venc, aberto}); }
+  }
+  return out.sort((a,b)=>a.venc.localeCompare(b.venc));
+}
+function abrirPrevisao(id, ym){
+  const c=D.contas[id], mo=c.moeda||'BRL', hoje=todayISO(), ate=ultimoDia(ym);
+  const pend = txAtivas().filter(t=>(t.contaId===id||t.contaDestinoId===id) && !(t.cartaoId && (t.tipo==='despesa'||t.tipo==='receita')) && t.data<=ate && (!t.pago || t.data>hoje))
+    .map(t=>{ let v=+t.valor||0; if (t.tipo==='transferencia') v = t.contaDestinoId===id ? (t.valorDestino!=null?+t.valorDestino:v) : -v; else if (['despesa','aplicacao','pagamento_fatura'].includes(t.tipo)) v=-v; return {data:t.data, desc:t.descricao||catNome(t.categoriaId)||t.tipo, v, atrasado:!t.pago&&t.data<hoje}; });
+  const fats = faturasAPagar(id, ate).map(f=>({data:f.venc, desc:`Fatura ${cartaoNome(f.cartaoId)} · ${mesCurto(f.ym)}`, v:-f.aberto, fat:true, atrasado:f.venc<hoje}));
+  const itens = pend.concat(fats).sort((a,b)=>a.data.localeCompare(b.data));
+  const atual = saldoConta(id), prev = saldoConta(id,{previsto:true, ate});
+  modal(`<h2>Previsão · ${esc(c.nome)} · <span style="text-transform:capitalize">${mesNome(ym)}</span></h2>
+    <table><tbody><tr><td>Saldo de hoje</td><td class="num"><b>${money(atual,mo)}</b></td></tr></tbody></table>
+    <div class="donutleg" style="max-height:340px;margin:8px 0">${itens.length? itens.map(i=>`<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);font-size:13.5px"><span class="muted" style="width:46px">${i.data.slice(8)}/${i.data.slice(5,7)}</span><span style="flex:1;min-width:0">${esc(i.desc)} ${i.fat?'<span class="pill">💳 fatura</span>':''}${i.atrasado?' <span class="pill warn">pendente</span>':''}</span><span class="num ${i.v>=0?'pos':'neg'}">${i.v>=0?'+':'−'}${money(Math.abs(i.v),mo)}</span></div>`).join('') : '<div class="hint" style="padding:8px 0">Nenhum lançamento pendente até o fim do mês.</div>'}</div>
+    <table><tbody><tr><td><b>Previsto em ${fmtData(ate)}</b></td><td class="num"><b class="${prev>=0?'pos':'neg'}">${money(prev,mo)}</b></td></tr></tbody></table>
+    <div class="hint" style="margin-top:6px">Entram: lançamentos com data até o fim do mês ainda não pagos (inclusive atrasados) e faturas em aberto dos cartões pagos por esta conta que vencem no período.</div>
+    <div class="mfoot"><div class="sp"></div><button class="btn pri" data-close>Fechar</button></div>`);
 }
 const toBRL = (v, moeda) => moeda==='USD' ? v*cfg().usdbrl : v;
 function fatura(cartaoId, ym){
@@ -771,7 +797,7 @@ const ACTS = {
   conferirTodos: async ()=>{ for (const t of txAtivas().filter(t=>t.conferir)) await patch('transacoes', t.id, {conferir:false}); toast('Tudo conferido'); },
   editCat: id=>abrirCategoria(id), novaCat: ()=>abrirCategoria(),
   editProv: id=>abrirProvento(id), novoProv: ()=>abrirProvento(), precoManual: id=>abrirPreco(id),
-  conciliar: ()=>abrirConciliar(), comp: id=>abrirComposicao(id),
+  conciliar: ()=>abrirConciliar(), prev: (id,b)=>abrirPrevisao(id, b.dataset.mes), comp: id=>abrirComposicao(id),
   desfazerImport: async id => { const ids=list('transacoes').filter(t=>t.lote===id).map(t=>t.id); const mov=list('transacoes').filter(t=>t.conciliacao===id);
     if(!(await confirmar(mov.length? `Desfazer esta conciliação? ${mov.length} compras voltam para as contas de origem e ${ids.length} lançamentos criados por ela são apagados.` : `Apagar os ${ids.length} lançamentos desta importação? Contas e categorias criadas por ela continuam; você pode excluí-las depois se ficarem vazias.`, mov.length?'Desfazer':'Apagar'))) return;
     toast('Desfazendo…');
@@ -974,7 +1000,7 @@ function vContas(){
   <header class="top"><h1>Contas e cartões</h1><div class="sp"></div>${monthNav()}</header>
   <div class="grid g2">
   <div class="card"><h3>Contas<div class="sp"></div><button class="btn sm" data-act="novaConta">+ Conta</button></h3>
-    ${contas.map(c=>{ const s=saldoConta(c.id), p=saldoConta(c.id,{previsto:true,ate:`${ym}-31`}); return `<div class="acct" style="cursor:pointer;${c.arquivada?'opacity:.55':''}" data-act="editConta" data-id="${c.id}"><span class="dot" style="background:${c.cor||'#94a3b8'};width:12px;height:12px"></span><div style="flex:1;min-width:0"><div class="nm">${esc(c.nome)} ${c.moeda==='USD'?'<span class="pill">USD</span>':''}</div><div class="hint">${TIPOS_CONTA[c.tipo]||''}${c.arquivada?' · arquivada':''}</div></div><div class="num" data-act="comp" data-id="${c.id}" title="Ver composição do saldo" style="cursor:pointer"><div style="font-weight:600">${money(s,c.moeda)}</div><div class="hint">previsto fim de ${mesCurto(ym)}: ${money(p,c.moeda)}</div></div></div>`; }).join('') || '<div class="empty">Cadastre sua primeira conta</div>'}
+    ${contas.map(c=>{ const s=saldoConta(c.id), p=saldoConta(c.id,{previsto:true,ate:`${ym}-31`}); return `<div class="acct" style="cursor:pointer;${c.arquivada?'opacity:.55':''}" data-act="editConta" data-id="${c.id}"><span class="dot" style="background:${c.cor||'#94a3b8'};width:12px;height:12px"></span><div style="flex:1;min-width:0"><div class="nm">${esc(c.nome)} ${c.moeda==='USD'?'<span class="pill">USD</span>':''}</div><div class="hint">${TIPOS_CONTA[c.tipo]||''}${c.arquivada?' · arquivada':''}</div></div><div class="num" data-act="comp" data-id="${c.id}" title="Ver composição do saldo" style="cursor:pointer"><div style="font-weight:600">${money(s,c.moeda)}</div><div class="hint" data-act="prev" data-id="${c.id}" data-mes="${ym}" style="cursor:pointer;text-decoration:underline dotted" title="Ver o que entra na previsão">previsto fim de ${mesCurto(ym)}: ${money(p,c.moeda)}</div></div></div>`; }).join('') || '<div class="empty">Cadastre sua primeira conta</div>'}
     ${nArq? `<button class="btn ghost sm mt" data-act="toggleArq">${ui.verArquivadas?'Esconder':'Mostrar'} ${nArq} conta${nArq>1?'s':''} arquivada${nArq>1?'s':''}</button>`:''}
   </div>
   <div class="card"><h3>Cartões de crédito · faturas de ${mesCurto(ym)}<div class="sp"></div><button class="btn sm" data-act="novoCartao">+ Cartão</button></h3>
