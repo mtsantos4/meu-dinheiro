@@ -158,7 +158,7 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 .novaversao{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:70;background:var(--acc);color:#fff;border:0;border-radius:99px;padding:11px 18px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);cursor:pointer}
 @media (min-width:761px){.novaversao{bottom:24px}}
 .sel{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
-.tfix{table-layout:fixed}@media(max-width:700px){.tfix th,.tfix td{font-size:12.5px;padding-left:4px;padding-right:4px}}.so-m{display:none}@media(max-width:700px){.so-m{display:block}}.tfix th:first-child,.tfix td:first-child{width:24%}
+.tfix{table-layout:fixed}@media(max-width:700px){.tfix th,.tfix td{font-size:12.5px;padding-left:4px;padding-right:4px}}.so-m{display:none}.pctpill{display:inline-block;font-weight:600;font-size:12.5px;padding:2px 7px;border-radius:999px;background:color-mix(in srgb,currentColor 14%,transparent)}@media(max-width:700px){.tpos th:nth-child(4),.tpos td:nth-child(4){display:none}.tpos th:first-child,.tpos td:first-child{width:27%}.tpos th:nth-child(5),.tpos td:nth-child(5){width:27%}.pctpill{font-size:11.5px;padding:1px 5px}}@media(max-width:700px){.so-m{display:block}}.tfix th:first-child,.tfix td:first-child{width:24%}
 .donutwrap{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .donutleg{max-height:220px;overflow:auto}
 .bloco{border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden;background:var(--panel)}
@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102142126';
+const APP_BUILD = '20261102143122';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -492,16 +492,39 @@ function posicao(ticker, ate){
   }
   return {qtd, custo, custoBRL, pm: qtd? custo/qtd:0, realizado, primeira};
 }
+/* Rentabilidade ponderada pelo tempo (TWR) de um ativo: encadeia a variação de preço entre
+   cada operação e soma os proventos por cota no período — não depende de quando/quanto foi aportado. */
+function rentTWR(ticker, precoAtual, divs){
+  const ops = opsDo(ticker); if (!ops.length || precoAtual==null) return null;
+  let qtd=0, ref=null, ini=null, acc=1, divAcum=0; const ds=(divs||[]).slice().sort((a,b)=>a.data.localeCompare(b.data)); let di=0;
+  const fecha = (ate, preco) => { // fecha o subperíodo [ini, ate)
+    while (di<ds.length && ds[di].data < ate){ if (ds[di].data>=ini) divAcum += ds[di].porCota; di++; }
+    if (ref>0) acc *= (preco + divAcum)/ref; divAcum=0;
+  };
+  for (const o of ops){
+    const q=+o.qtd||0, pr=+o.preco||0;
+    if (o.tipo==='compra' || o.tipo==='venda'){
+      if (!(pr>0)) continue;
+      if (qtd>0) fecha(o.data, pr); else { while (di<ds.length && ds[di].data < o.data) di++; }
+      qtd += o.tipo==='compra'? q : -Math.min(q,qtd); if (qtd<1e-10) qtd=0;
+      ref = pr; ini = o.data;
+    } else if (o.tipo==='desdobramento'){ const f=+o.fator||1; qtd*=f; if (ref) ref/=f; }
+    else if (o.tipo==='bonificacao'){ if (qtd>0 && ref){ ref *= qtd/(qtd+q); } qtd+=q; }
+  }
+  if (qtd<=0 || !ref) return null;
+  fecha('9999-12-31', precoAtual);
+  return acc-1;
+}
 function carteira(){
   const c = cfg(); const rows=[];
-  const provAt = {}; proventosCalc().forEach(p=>{ if (p.status!=='pago') return; const m=p.ativo.moeda||'BRL'; const v = p.moeda===m? p.liquido : (m==='USD'? p.liquidoBRL/c.usdbrl : p.liquidoBRL); provAt[p.ticker]=(provAt[p.ticker]||0)+v; });
+  const provAt = {}, divAt = {}; proventosCalc().forEach(p=>{ if (p.status!=='pago') return; const m=p.ativo.moeda||'BRL'; const v = p.moeda===m? p.liquido : (m==='USD'? p.liquidoBRL/c.usdbrl : p.liquidoBRL); provAt[p.ticker]=(provAt[p.ticker]||0)+v; if (p.qtd>0) (divAt[p.ticker]=divAt[p.ticker]||[]).push({data:p.dataCom||p.dataPagamento, porCota:v/p.qtd}); });
   for (const a of list('ativos')){
     const p = posicao(a.ticker); const m = D.mercado[safeId(a.ticker)];
     const moeda = a.moeda||'BRL'; const fx = moeda==='USD'? c.usdbrl : 1;
     const preco = m && Number.isFinite(+m.preco) ? +m.preco : null;
     const valor = preco!=null ? p.qtd*preco : p.custo; // sem cotação, usa o custo
     const resultado = preco!=null ? valor - p.custo : 0;
-    rows.push({...a, ...p, moeda, preco, mercado:m, valor, valorBRL: valor*fx, custoAtualBRL: moeda==='USD' ? p.custoBRL : p.custo, resultado, resultadoPct: p.custo? resultado/p.custo : 0, provRec: provAt[a.ticker]||0, rentReal: p.custo? (resultado+(provAt[a.ticker]||0))/p.custo : 0, variacao: m? +m.variacao : null});
+    rows.push({...a, ...p, moeda, preco, mercado:m, valor, valorBRL: valor*fx, custoAtualBRL: moeda==='USD' ? p.custoBRL : p.custo, resultado, resultadoPct: p.custo? resultado/p.custo : 0, provRec: provAt[a.ticker]||0, rentReal: (()=>{ const t = rentTWR(a.ticker, preco, divAt[a.ticker]); return t==null? (p.custo? (resultado+(provAt[a.ticker]||0))/p.custo : 0) : t; })(), variacao: m? +m.variacao : null});
   }
   const ativos = rows.filter(r=>r.qtd>0).sort((a,b)=>b.valorBRL-a.valorBRL);
   const total = ativos.reduce((s,r)=>s+r.valorBRL,0);
@@ -1038,7 +1061,7 @@ function vCarteira(){
     const grupos={}; cart.ativos.forEach(r=>(grupos[r.classe||'outro']=grupos[r.classe||'outro']||[]).push(r));
     const ordem=Object.entries(grupos).map(([cl,rs])=>({cl, rs, valor:rs.reduce((x,r)=>x+r.valorBRL,0), custo:rs.reduce((x,r)=>x+r.custoAtualBRL,0)})).sort((a,b)=>ordClasse(a.cl)-ordClasse(b.cl)||b.valor-a.valor);
     body = cart.ativos.length ? ordem.map(g=>{ const res=g.valor-g.custo;
-      return bloco('cart_'+g.cl, `<span class="dot" style="background:${CLASS_COR[g.cl]||'#64748b'}"></span>${CLASSES[g.cl]||g.cl} <span class="hint" style="font-weight:400">(${g.rs.length})</span><span class="sp"></span><span class="num" style="font-weight:600">${money(g.valor)}</span><span class="hint hide-m" style="font-weight:400;margin-left:8px">${fmtN(cart.total? g.valor/cart.total*100:0,1)}%</span><span class="num ${res>=0?'pos':'neg'}" style="font-weight:500;margin-left:10px;font-size:13px">${pct(g.custo? res/g.custo:0)}</span>`, `<div class="tblwrap"><table class="tfix"><thead><tr><th>Ativo</th><th class="num hide-m">Qtd</th><th class="num hide-m">Preço médio</th><th class="num">Cotação</th><th class="num">Valor</th><th class="num">Resultado</th><th class="num hide-m">% carteira</th></tr></thead><tbody>${g.rs.map(r=>`<tr class="click" data-act="editAtivo" data-id="${r.id}"><td><div style="font-weight:600">${esc(r.ticker)}</div><div class="hint so-m">${fmtQ(r.qtd)} cotas</div><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome||'')}${r.mercado&&r.mercado.atualizadoEm?'':(r.nome?' · ':'')+'sem cotação'}</div></td><td class="num hide-m">${fmtQ(r.qtd)}</td><td class="num hide-m">${money(r.pm,r.moeda)}</td><td class="num">${r.preco!=null?money(r.preco,r.moeda):'—'}${Number.isFinite(r.variacao)&&r.variacao!==0?`<div class="hint ${r.variacao>=0?'pos':'neg'}">${pct(r.variacao/100)}</div>`:''}</td><td class="num">${money(r.valor,r.moeda)}${r.moeda==='USD'?`<div class="hint">${money(r.valorBRL)}</div>`:''}</td><td class="num ${r.resultado>=0?'pos':'neg'}">${money(r.resultado,r.moeda)}<div class="hint ${r.resultado>=0?'pos':'neg'}">${pct(r.resultadoPct)}</div>${r.provRec>0?`<div class="hint" title="Rentabilidade somando os proventos recebidos (${money(r.provRec,r.moeda)})" style="font-size:11px;line-height:1.25;margin-top:3px;white-space:normal"><b class="${r.rentReal>=0?'pos':'neg'}">${pct(r.rentReal)}</b> <span style="display:inline-block">c/ prov.</span></div>`:''}</td><td class="num hide-m">${fmtN(r.peso*100,1)}%</td></tr>`).join('')}</tbody></table></div>`); }).join('') : '<div class="empty">Nenhum ativo em carteira. Lance sua primeira compra.</div>'
+      return bloco('cart_'+g.cl, `<span class="dot" style="background:${CLASS_COR[g.cl]||'#64748b'}"></span>${CLASSES[g.cl]||g.cl} <span class="hint" style="font-weight:400">(${g.rs.length})</span><span class="sp"></span><span class="num" style="font-weight:600">${money(g.valor)}</span><span class="hint hide-m" style="font-weight:400;margin-left:8px">${fmtN(cart.total? g.valor/cart.total*100:0,1)}%</span><span class="num ${res>=0?'pos':'neg'}" style="font-weight:500;margin-left:10px;font-size:13px">${pct(g.custo? res/g.custo:0)}</span>`, `<div class="tblwrap"><table class="tfix tpos"><thead><tr><th>Ativo</th><th class="num hide-m">Qtd</th><th class="num hide-m">Preço médio</th><th class="num">Cotação</th><th class="num">Saldo</th><th class="num" title="Quanto a cotação variou sobre o seu preço médio">Variação</th><th class="num" title="Rentabilidade ponderada pelo tempo, incluindo os proventos recebidos">Rentab.</th><th class="num hide-m">% carteira</th></tr></thead><tbody>${g.rs.map(r=>`<tr class="click" data-act="editAtivo" data-id="${r.id}"><td><div style="font-weight:600">${esc(r.ticker)}</div><div class="hint so-m">${fmtQ(r.qtd)} × ${r.preco!=null?money(r.preco,r.moeda):'—'}</div><div class="hint hide-m" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome||'')}${r.mercado&&r.mercado.atualizadoEm?'':(r.nome?' · ':'')+'sem cotação'}</div></td><td class="num hide-m">${fmtQ(r.qtd)}</td><td class="num hide-m">${money(r.pm,r.moeda)}</td><td class="num">${r.preco!=null?money(r.preco,r.moeda):'—'}${Number.isFinite(r.variacao)&&r.variacao!==0?`<div class="hint ${r.variacao>=0?'pos':'neg'}">${pct(r.variacao/100)}</div>`:''}</td><td class="num">${money(r.valor,r.moeda)}${r.moeda==='USD'?`<div class="hint">${money(r.valorBRL)}</div>`:''}</td><td class="num"><span class="pctpill ${r.resultado>=0?'pos':'neg'}">${pct(r.resultadoPct)}</span><div class="hint ${r.resultado>=0?'pos':'neg'}">${money(r.resultado,r.moeda)}</div></td><td class="num"><span class="pctpill ${r.rentReal>=0?'pos':'neg'}">${pct(r.rentReal)}</span>${r.provRec>0?`<div class="hint hide-m" title="Proventos recebidos">+${money(r.provRec,r.moeda)} prov.</div>`:''}</td><td class="num hide-m">${fmtN(r.peso*100,1)}%</td></tr>`).join('')}</tbody></table></div>`); }).join('') : '<div class="empty">Nenhum ativo em carteira. Lance sua primeira compra.</div>'
     body = painelPosicoes() + `<div class="card">${body}</div>`;
   } else if (tab==='operacoes'){
     const ops = list('operacoes').sort((a,b)=>(b.data+(b.criadoEm||'')).localeCompare(a.data+(a.criadoEm||'')));
