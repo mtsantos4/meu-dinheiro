@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102112545';
+const APP_BUILD = '20261102113812';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -843,7 +843,7 @@ function vInicio(){
     <div class="card kpi"><div class="lbl">Proventos · ${mesCurto(ui.mes)}</div><div class="val">${money(r.prov)}</div><div class="sub">${r.desp>0? `cobriram ${fmtN(cobertura*100,1)}% das despesas`:'—'}</div></div>
   </div>
   <div class="grid g2 mt">
-    <div class="card"><h3>Despesas por categoria</h3>${Object.keys(r.porCat).length? `<div class="chartbox"><canvas id="chCat"></canvas></div>`:`<div class="empty">Nenhuma despesa em ${mesNome(ui.mes)}</div>`}</div>
+    <div class="card"><h3>Despesas por categoria</h3>${Object.keys(r.porCat).length? `${(()=>{ const ents=Object.entries(r.porCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]); const tot=ents.reduce((x,e)=>x+e[1],0); return `<div class="donutwrap"><div class="chartbox" style="height:190px"><canvas id="chCat"></canvas></div><div class="donutleg">${ents.map(([k,v])=>`<div class="row" style="padding:3px 0;font-size:13px"><span class="dot" style="background:${catCor(k)}"></span><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(catNome(k))}</span><span class="num muted" style="width:52px">${fmtN(tot? v/tot*100:0,1)}%</span><span class="num" style="width:100px">${money(v)}</span></div>`).join('')}</div></div>`; })()}`:`<div class="empty">Nenhuma despesa em ${mesNome(ui.mes)}</div>`}</div>
     <div class="card"><h3>Receitas × despesas (6 meses)</h3><div class="chartbox"><canvas id="chMeses"></canvas></div></div>
   </div>
   <div class="grid g3 mt">
@@ -865,7 +865,7 @@ function vInicio(){
 afterRender.inicio = () => {
   const r = resumoMes(ui.mes);
   const ents = Object.entries(r.porCat).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
-  if (ents.length) chart('chCat',{type:'doughnut',data:{labels:ents.map(e=>catNome(e[0])),datasets:[{data:ents.map(e=>Math.round(e[1]*100)/100),backgroundColor:ents.map(e=>catCor(e[0])),borderWidth:2,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{position:'right',labels:{color:cssv('--text'),boxWidth:10,boxHeight:10,font:{size:12}}},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}});
+  if (ents.length) chart('chCat',{type:'doughnut',data:{labels:ents.map(e=>catNome(e[0])),datasets:[{data:ents.map(e=>Math.round(e[1]*100)/100),backgroundColor:ents.map(e=>catCor(e[0])),borderWidth:2,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}});
   const meses=[...Array(6)].map((_,i)=>addMonths(ui.mes,i-5)); const rs=meses.map(resumoMes);
   chart('chMeses',{type:'bar',data:{labels:meses.map(mesCurto),datasets:[{label:'Receitas',data:rs.map(x=>x.rec),backgroundColor:cssv('--pos'),borderRadius:4},{label:'Despesas',data:rs.map(x=>x.desp),backgroundColor:cssv('--neg'),borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{labels:{color:cssv('--text'),boxWidth:10,boxHeight:10}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${money(c.parsed.y)}`}}},scales:{x:{ticks:{color:cssv('--muted')},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>'R$ '+(v>=1000? fmtN(v/1000,0)+' mil': v)},grid:{color:cssv('--line')}}}}});
 };
@@ -1115,7 +1115,7 @@ function resumoInvest(){
     provTotal: pagos.reduce((s,p)=>s+p.liquidoBRL,0), prov12: pagos.filter(p=>monthOf(p.dataPagamento)>=ini12).reduce((s,p)=>s+p.liquidoBRL,0),
     aReceber: provs.filter(p=>p.status!=='pago').reduce((s,p)=>s+p.liquidoBRL,0) };
 }
-const cardPatrimonio = R => `<div class="card kpi"><div class="lbl">Patrimônio total</div><div class="val">${money(R.cart.total)} <span style="font-size:13px" class="${R.dia>=0?'pos':'neg'}">${R.dia>=0?'▲':'▼'} ${fmtN(Math.abs(R.diaPct)*100,2)}%</span></div><div class="sub">Valor investido <b>${money(R.cart.custo)}</b></div></div>`;
+const cardPatrimonio = R => { const g=R.cart.total-R.cart.custo, gp=R.cart.custo? g/R.cart.custo*100:0, sg=v=>v>0?'+':v<0?'−':''; return `<div class="card kpi"><div class="lbl">Patrimônio total</div><div class="val">${money(R.cart.total)}</div><div class="sub"><b class="${g>=0?'pos':'neg'}">${g>=0?'▲':'▼'} ${sg(gp)}${fmtN(Math.abs(gp),2)}%</b> sobre o investido · hoje <span class="${R.dia>=0?'pos':'neg'}">${sg(R.diaPct)}${fmtN(Math.abs(R.diaPct)*100,2)}%</span></div><div class="sub">Valor investido <b>${money(R.cart.custo)}</b></div></div>`; };
 function vResumoInvest(){
   const R=resumoInvest(); const RR=calcRentab(''); const L=RR?RR.linhas:[];
   const r12=acumular(L.slice(-12).map(l=>l.r)), rT=acumular(L.map(l=>l.r));
