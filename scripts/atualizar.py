@@ -47,6 +47,12 @@ def safe_id(s):
     return re.sub(r"[^A-Z0-9_\-.~:@+]", "_", s.upper())
 
 def data_br(s):
+    d = _data_br(s)
+    # B3 usa 31/12/9999 para "data a definir"
+    return d if d and "1990" <= d[:4] <= "2100" else None
+
+
+def _data_br(s):
     """'31/10/2026' ou '2026-10-31T00:00:00' -> '2026-10-31'"""
     if not s:
         return None

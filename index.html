@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102143949';
+const APP_BUILD = '20261102144240';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -540,7 +540,9 @@ function liquidoProvento(p, a){
 }
 function proventosCalc(){
   const hoje = todayISO(); const out=[];
-  for (const p of list('proventos')){
+  const dOk = d => d && d.slice(0,4) <= '2100' ? d : null; // B3 usa 31/12/9999 para "a definir"
+  for (const p0 of list('proventos')){
+    const p = {...p0, dataCom: dOk(p0.dataCom), dataPagamento: dOk(p0.dataPagamento)};
     const a = Object.values(D.ativos).find(x=>x.ticker===p.ticker); if(!a) continue;
     const ref = p.dataCom || p.dataPagamento; if (!ref) continue;
     const qtd = posicao(p.ticker, ref).qtd; if (qtd<=0) continue;
