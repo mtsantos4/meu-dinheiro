@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102020938';
+const APP_BUILD = '20261102021609';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -670,6 +670,7 @@ function bindView(){
   document.querySelectorAll('[data-mes]').forEach(b=>b.onclick=()=>{ ui.mes=addMonths(ui.mes,+b.dataset.mes); render(); });
   document.querySelectorAll('[data-act]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); ACTS[b.dataset.act](b.dataset.id, b); });
   document.querySelectorAll('[data-tx]').forEach(b=>b.onclick=()=>abrirTransacao(b.dataset.tx));
+  document.querySelectorAll('[data-fat]').forEach(b=>b.onclick=()=>{ const [cid,ym]=b.dataset.fat.split('|'); abrirResumoFatura(cid, ym); });
   ligarBlocos();
 }
 const ACTS = {
@@ -751,6 +752,8 @@ function txRow(t){
   const isCard = !!t.cartaoId; let sinal=-1, cor='var(--neg)', ic='', bg=catCor(t.categoriaId), sub='';
   const moeda = isCard? 'BRL' : ((D.contas[t.contaId]||{}).moeda||'BRL');
   if (t.tipo==='receita'){ sinal=1; cor='var(--pos)'; }
+  if (t.tipo==='fatura_resumo'){ const k=D.cartoes[t.cartaoId]||{}; const paga = t.pagoValor>=t.valor-0.005 && t.valor>0; const venceu = t.data < todayISO();
+    return `<div class="tx" data-fat="${t.cartaoId}|${t.faturaMes}"><div class="ic" style="background:${k.cor||'#64748b'}">💳</div><div class="main"><div class="d1">Fatura ${esc(k.nome||'')} · <span style="text-transform:capitalize">${mesCurto(t.faturaMes)}</span> ${paga?'<span class="pill acc">paga</span>':venceu?'<span class="pill warn">em aberto</span>':'<span class="pill">aberta</span>'}</div><div class="d2">${t.nItens} lançamento${t.nItens!==1?'s':''} · vence ${fmtData(t.data)}${t.pagoValor>0.005&&!paga?' · pago '+money(t.pagoValor):''}</div></div><div class="v" style="color:var(--neg)">−${money(t.valor)}</div></div>`; }
   if (t.tipo==='ajuste'){ const v=+t.valor||0; return `<div class="tx" data-tx="${t.id}"><div class="ic" style="background:#64748b">±</div><div class="main"><div class="d1">${esc(t.descricao||'Ajuste de saldo')}</div><div class="d2">Ajuste de saldo · ${esc(contaNome(t.contaId))}</div></div><div class="v" style="color:var(--text)">${v>=0?'+':'−'}${money(Math.abs(v), moeda)}</div></div>`; }
   if (t.tipo==='transferencia'){ sinal=0; cor='var(--text)'; bg='#64748b'; ic='⇄'; sub=`${contaNome(t.contaId)} → ${contaNome(t.contaDestinoId)}`+(t.valorDestino!=null?` · recebeu ${money(+t.valorDestino,(D.contas[t.contaDestinoId]||{}).moeda||'BRL')}`:'')+(+t.taxa>0?` · taxas ${money(+t.taxa,(D.contas[t.contaId]||{}).moeda||'BRL')}`:''); }
   else if (t.tipo==='pagamento_fatura'){ sinal=-1; bg='#64748b'; ic='▤'; sub=`Fatura ${cartaoNome(t.cartaoId)} · ${mesCurto(t.faturaMes||'')} · ${contaNome(t.contaId)}`; }
@@ -778,6 +781,20 @@ function vTransacoes(){
     const c=(a.data+(a.criadoEm||'')).localeCompare(b.data+(b.criadoEm||'')); return o==='asc'? c : -c; });
   let rec=0, desp=0; txs.forEach(t=>{ if (t.tipo==='transferencia' && +t.taxa>0 && (!f.conta || f.conta==='a:'+t.contaId)) desp += toBRL(+t.taxa, (D.contas[t.contaId]||{}).moeda||'BRL');
     if(TIPOS_NAO_RESULTADO.has(t.tipo) || ehInvest(t)) return; const v=+t.valor||0; if(t.tipo==='receita') rec+=v; else if(t.tipo==='despesa') desp+=v; });
+  // modo resumo: compras do cartão viram uma linha por fatura, na data de vencimento
+  const modoResumo = !ui.faturaVer && !f.conta && !f.cat && !f.tipo && !q;
+  if (modoResumo){
+    const ini = (f.de||f.ate) ? monthOf(f.de && f.de>'1900'? f.de : (txAtivas().map(t=>t.data).sort()[0]||todayISO())) : ui.mes;
+    const fim = (f.de||f.ate) ? monthOf(f.ate && f.ate<'9000'? f.ate : todayISO()) : ui.mes;
+    txs = txs.filter(t=>!(t.cartaoId && (t.tipo==='despesa'||t.tipo==='receita')) && t.tipo!=='pagamento_fatura');
+    for (const k of list('cartoes')) for (const ym of mesesEntre(ini, addMonths(fim, (f.de||f.ate)?0:0))){
+      const fa=fatura(k.id, ym); if (Math.abs(fa.total)<0.005 && fa.pago<0.005) continue;
+      const venc = `${ym}-${pad(Math.min(+k.vencimento||10, +ultimoDia(ym).slice(8)))}`;
+      if ((f.de && venc<f.de) || (f.ate && venc>f.ate)) continue;
+      txs.push({id:'fat:'+k.id+':'+ym, tipo:'fatura_resumo', data:venc, valor:fa.total, cartaoId:k.id, faturaMes:ym, pagoValor:fa.pago, nItens:fa.itens.length, criadoEm:''});
+    }
+    const o=f.ordem||'desc'; txs.sort((a,b)=>{ if (o==='valor') return (+b.valor||0)-(+a.valor||0); const c=(a.data+(a.criadoEm||'')).localeCompare(b.data+(b.criadoEm||'')); return o==='asc'? c : -c; });
+  }
   const groups = {}; txs.forEach(t=>(groups[t.data]=groups[t.data]||[]).push(t));
   const pend = txAtivas().filter(t=>t.conferir).length;
   const titulo = ui.faturaVer ? `Fatura ${cartaoNome(f.conta.slice(2))} · ${mesNome(ui.faturaVer)}` : '';
@@ -1465,6 +1482,23 @@ function abrirComposicao(id){
     ${maiores.length?`<h3 class="mt">Maiores lançamentos</h3>${maiores.map(t=>`<div class="row" style="padding:4px 0;font-size:13px"><span style="flex:1">${fmtData(t.data)} · ${esc(t.descricao||catNome(t.categoriaId))} <span class="hint">${esc(catNome(t.categoriaId))}</span></span><span class="num">${money(+t.valor,mo)}</span></div>`).join('')}`:''}
     <div class="mfoot"><button class="btn" id="verTx">Ver lançamentos da conta</button><div class="sp"></div><button class="btn pri" data-close>Fechar</button></div>`,(m,close)=>{
     $('#verTx',m).onclick=()=>{ close(); ui.f={conta:'a:'+id,cat:'',tipo:'',q:''}; ui.faturaVer=null; go('transacoes'); };
+  });
+}
+function abrirResumoFatura(cid, ym){
+  const k=D.cartoes[cid]; const fa=fatura(cid, ym); const aberto=Math.max(0, fa.total-fa.pago);
+  const venc = `${ym}-${pad(Math.min(+k.vencimento||10, +ultimoDia(ym).slice(8)))}`;
+  const pags = txAtivas().filter(t=>t.tipo==='pagamento_fatura' && t.cartaoId===cid && t.faturaMes===ym);
+  modal(`<h2>Fatura ${esc(k.nome)} · <span style="text-transform:capitalize">${mesNome(ym)}</span></h2>
+    <table><tbody>
+      <tr><td>Vencimento</td><td class="num">${fmtData(venc)}</td></tr>
+      <tr><td>Total da fatura <span class="hint">(${fa.itens.length} lançamentos)</span></td><td class="num"><b>${money(fa.total)}</b></td></tr>
+      <tr><td>Pago</td><td class="num pos">${money(fa.pago)}</td></tr>
+      ${aberto>0.005?`<tr><td>Em aberto</td><td class="num neg"><b>${money(aberto)}</b></td></tr>`:''}
+    </tbody></table>
+    ${pags.length?`<div class="hint" style="margin-top:8px">${pags.map(p=>`Pagamento de ${money(+p.valor)} em ${fmtData(p.data)} · ${esc(contaNome(p.contaId))}`).join('<br>')}</div>`:''}
+    <div class="mfoot"><button class="btn" data-close>Fechar</button><div class="sp"></div>${aberto>0.005?'<button class="btn" id="fPagar">Pagar</button>':''}<button class="btn pri" id="fVer">Ver fatura</button></div>`, (m,close)=>{
+    $('#fVer',m).onclick=()=>{ close(); ui.f={...ui.f, conta:'c:'+cid, cat:'', tipo:'', q:''}; ui.faturaVer=ym; go('transacoes'); };
+    if ($('#fPagar',m)) $('#fPagar',m).onclick=()=>{ close(); abrirPagamento(cid, ym); };
   });
 }
 function abrirAjuste(id){
