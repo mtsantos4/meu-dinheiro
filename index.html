@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102170227';
+const APP_BUILD = '20261102171320';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -1864,13 +1864,12 @@ function abrirInfoAtivo(tk){
   const grupo = (titulo, itens) => { const h = itens.map(x=>cel(...x)).join(''); return h ? `<div class="indgrp"><div class="hint" style="font-weight:600;text-transform:uppercase;letter-spacing:.04em;font-size:11px;margin:10px 0 6px">${titulo}</div><div class="indgrid">${h}</div></div>` : ''; };
   const D_ = IND_DICA;
   const indicadores = ehFii
-    ? grupo('Fundo', [['pvp','P/VP','x',D_.pvp],['dy','Dividend yield','%',D_.dy],['divCota','Dividendo/cota (12m)','$'],['vpCota','Valor patrimonial/cota','$'],['ffoYield','FFO yield','%',D_.ffoYield],['ffoCota','FFO/cota','$']])
+    ? grupo('Fundo', [['pvp','P/VP','x',D_.pvp],['vpCota','Valor patrimonial/cota','$'],['ffoYield','FFO yield','%',D_.ffoYield],['ffoCota','FFO/cota','$']])
       + grupo('Imóveis', [['vacancia','Vacância média','%',D_.vacancia],['capRate','Cap rate','%'],['qtdImoveis','Imóveis','n'],['qtdUnidades','Unidades','n'],['area','Área (m²)','n'],['aluguelM2','Aluguel/m²','$']])
       + grupo('Outros', [['taxaAdm','Taxa de administração','%'],['beta','Beta','x'],['pl','P/L','x']])
     : grupo('Valuation', [['pl','P/L','x',D_.pl],['plFuturo','P/L projetado','x'],['pvp','P/VP','x',D_.pvp],['psr','P/Receita (PSR)','x'],['evEbitda','EV/EBITDA','x',D_.evEbitda],['evEbit','EV/EBIT','x'],['pEbit','P/EBIT','x'],['pAtivos','P/Ativo','x'],['pCapGiro','P/Capital de giro','x'],['pAcl','P/Ativo circ. líq.','x'],['lpa','LPA','$'],['vpa','VPA','$']])
       + grupo('Eficiência', [['margBruta','Margem bruta','%'],['margEbit','Margem EBIT','%'],['margLiq','Margem líquida','%'],['giroAtivos','Giro dos ativos','x']])
       + grupo('Rentabilidade', [['roe','ROE','%',D_.roe],['roa','ROA','%'],['roic','ROIC','%',D_.roic]])
-      + grupo('Dividendos', [['dy','Dividend yield','%',D_.dy],['payout','Payout','%',D_.payout]])
       + grupo('Endividamento', [['divLiqPl','Dív. líquida/Patrimônio','x'],['divLiqEbitda','Dív. líquida/EBITDA','x',D_.divLiqEbitda],['liqCorr','Liquidez corrente','x',D_.liqCorr],['plAtivos','Patrimônio/Ativos','x'],['passAtivos','Passivos/Ativos','x']])
       + grupo('Crescimento', [['cresRec5','Receitas (CAGR 5 anos)','%'],['cagrReceita',`Receitas (CAGR ${nAnosR} anos)`,'%'],['cagrLucro',`Lucros (CAGR ${nAnosR} anos)`,'%'],['cresRec','Receita (último ano)','%']])
       + grupo('Mercado', [['beta','Beta','x'],['taxaAdm','Taxa de administração','%'],['retorno5a','Retorno médio 5 anos','%'],['precoAlvo','Preço-alvo dos analistas','$']]);
@@ -1884,7 +1883,7 @@ function abrirInfoAtivo(tk){
   const anosD = Object.keys(divAno).sort().filter(y=>+y>=ano-10);
   const provs = (f&&f.proventos)||[];
   const kd = (l,v,sub) => `<div class="indcel"><span class="hint">${l}</span><b>${v}</b>${sub?`<span class="hint" style="font-size:11.5px">${sub}</span>`:''}</div>`;
-  const blocoDiv = anosD.length||provs.length ? `<div class="indgrid">${kd('Dividend yield atual', Number.isFinite(ind.dy)? fmtN(ind.dy,2)+'%':'—','últimos 12 meses')}${kd('DY médio 5 anos', dyMed5!=null? fmtN(dyMed5,2)+'%':'—', `${anos5[4]}–${anos5[0]}`)}${kd('Média por ano (5 anos)', media5? money(media5,moedaDiv):'—', `por ${ehFii?'cota':'ação'}`)}${!ehFii&&Number.isFinite(ind.payout)?kd('Payout atual', fmtN(ind.payout,2)+'%'):''}</div>
+  const blocoDiv = anosD.length||provs.length ? `<div class="indgrid">${kd('Dividend yield atual', Number.isFinite(ind.dy)? fmtN(ind.dy,2)+'%':'—','últimos 12 meses'+(Number.isFinite(med.dy)?` · ${ehFii?'segmento':'setor'}: ${fmtN(med.dy,2)}%`:''))}${ehFii&&Number.isFinite(ind.divCota)?kd('Rendimento por cota (12m)', money(ind.divCota,moedaDiv)):''}${kd('DY médio 5 anos', dyMed5!=null? fmtN(dyMed5,2)+'%':'—', `${anos5[4]}–${anos5[0]}`)}${kd('Média por ano (5 anos)', media5? money(media5,moedaDiv):'—', `por ${ehFii?'cota':'ação'}`)}${!ehFii&&Number.isFinite(ind.payout)?kd('Payout atual', fmtN(ind.payout,2)+'%'):''}</div>
       ${anosD.length?`<div class="chartbox" style="height:200px;margin-top:10px"><canvas id="chDivAno"></canvas></div>`:''}
       ${provs.length?`<div class="tblwrap" style="margin-top:10px;max-height:260px;overflow:auto"><table><thead><tr><th>Tipo</th><th>Data-com</th><th>Pagamento</th><th class="num">Valor</th></tr></thead><tbody>${provs.map(p=>`<tr><td>${esc(p.t||'')}</td><td>${fmtData(p.c)}</td><td>${p.p?fmtData(p.p):'—'}</td><td class="num">${money(p.v,moedaDiv).replace(/(,\d{2})$/,'$1')}${p.v<0.01?'':''}</td></tr>`).join('')}</tbody></table></div>`:''}
       <div class="hint" style="margin-top:4px">Valores brutos por ${ehFii?'cota':'ação'}, somados pelo ano da data-com${f&&f.fonteDiv?` · fonte: ${esc(f.fonteDiv)}`:''}.</div>` : '';
