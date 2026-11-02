@@ -177,7 +177,7 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 ::-webkit-scrollbar-corner{background:transparent}
 .donutleg,.ddpanel,.modal,.tblwrap{scrollbar-gutter:stable}
 .donutleg{padding-right:6px}
-.invtop{flex-wrap:wrap;row-gap:10px;gap:8px}.invtop h1{display:none}.invtop .btn{padding:7px 12px}
+.invtop{gap:8px;margin-bottom:12px!important}.invtop .btn{padding:7px 12px}
 .invtabs{order:0}.invtabs button{padding:6px 10px}
 .sparkbox{height:38px;margin:4px 0}
 .resumogrid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:14px}
@@ -202,7 +202,7 @@ body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:no
   .modal{border-radius:18px 18px 0 0;max-height:94vh}
   .frm{grid-template-columns:minmax(0,1fr)}
   .resumogrid,.provgrid{grid-template-columns:minmax(0,1fr)}
-  .invtop h1{display:none}.invtabs{order:2;width:100%}
+  .invtabs{width:100%}
   .stickytop{margin:-16px -14px 10px;padding:12px 14px 8px}
   .stickytop header.top{margin-bottom:8px}.stickytop header.top h1{font-size:19px}
   .kpimini .val{font-size:14px}.kpimini .card{padding:7px 9px}
@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102012220';
+const APP_BUILD = '20261102012646';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -958,8 +958,9 @@ function vCarteira(){
   const semCard = ['resumo','ativos','proventos','alocacao','rentab'].includes(tab);
   return `
   <div class="stickytop">
-  <header class="top invtop"><h1>Investimentos</h1><div class="tabs invtabs">${ABAS.map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div><div class="sp"></div>
+  <header class="top invtop"><h1>Investimentos</h1><div class="sp"></div>
     <button class="btn" data-act="atualizarMercado" ${atualizando?'disabled':''} title="${upd?'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''}">${atualizando?'Atualizando…':'↻ Atualizar'}</button>${tab==='proventos'?'<button class="btn hide-m" data-act="novoProv">+ Provento</button>':''}<button class="btn hide-m" data-act="novoAtivo">+ Ativo</button><button class="btn pri hide-m" data-act="novaOp" title="Compra, venda, desdobramento ou bonificação">+ Operação</button></header>
+  <div class="tabs invtabs">${ABAS.map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>
   </div>
   ${semCard? body : `<div class="card">${body}</div>`}`;
 }
