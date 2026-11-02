@@ -252,12 +252,14 @@ let toastT; function toast(msg){ clearTimeout(toastT); let t=$('.toast'); if(!t)
 const PALETTE=['#0f766e','#2563eb','#c2410c','#7c3aed','#ca8a04','#db2777','#0891b2','#65a30d','#dc2626','#4f46e5','#059669','#9333ea','#ea580c','#0284c7','#a16207'];
 
 const CLASSES = {acao:'Ações',fii:'FIIs',etf:'ETFs BR',bdr:'BDRs',etf_ext:'ETFs exterior',stock_ext:'Ações exterior',cripto:'Cripto',outro:'Outros'};
+const ORDEM_CLASSES = ['acao','fii','bdr','cripto','etf_ext','etf','stock_ext','outro'];
+const ordClasse = c => { const i=ORDEM_CLASSES.indexOf(c||'outro'); return i<0? 99 : i; };
 const CLASS_COR = {acao:'#0f766e',fii:'#2563eb',etf:'#7c3aed',bdr:'#ca8a04',etf_ext:'#c2410c',stock_ext:'#db2777',cripto:'#0891b2',outro:'#64748b'};
 const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'Corretora',dinheiro:'Dinheiro',beneficio:'Benefício (VR/VA)',outro:'Outra'};
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102010344';
+const APP_BUILD = '20261102010528';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -876,7 +878,7 @@ function vCarteira(){
   let body='';
   if (tab==='ativos'){
     const grupos={}; cart.ativos.forEach(r=>(grupos[r.classe||'outro']=grupos[r.classe||'outro']||[]).push(r));
-    const ordem=Object.entries(grupos).map(([cl,rs])=>({cl, rs, valor:rs.reduce((x,r)=>x+r.valorBRL,0), custo:rs.reduce((x,r)=>x+r.custoAtualBRL,0)})).sort((a,b)=>b.valor-a.valor);
+    const ordem=Object.entries(grupos).map(([cl,rs])=>({cl, rs, valor:rs.reduce((x,r)=>x+r.valorBRL,0), custo:rs.reduce((x,r)=>x+r.custoAtualBRL,0)})).sort((a,b)=>ordClasse(a.cl)-ordClasse(b.cl)||b.valor-a.valor);
     body = cart.ativos.length ? ordem.map(g=>{ const res=g.valor-g.custo;
       return bloco('cart_'+g.cl, `<span class="dot" style="background:${CLASS_COR[g.cl]||'#64748b'}"></span>${CLASSES[g.cl]||g.cl} <span class="hint" style="font-weight:400">(${g.rs.length})</span><span class="sp"></span><span class="num" style="font-weight:600">${money(g.valor)}</span><span class="hint" style="font-weight:400;margin-left:8px">${fmtN(cart.total? g.valor/cart.total*100:0,1)}%</span><span class="num ${res>=0?'pos':'neg'}" style="font-weight:500;margin-left:10px;font-size:13px">${pct(g.custo? res/g.custo:0)}</span>`, `<div class="tblwrap"><table class="tfix"><thead><tr><th>Ativo</th><th class="num">Qtd</th><th class="num hide-m">Preço médio</th><th class="num">Cotação</th><th class="num">Valor</th><th class="num">Resultado</th><th class="num hide-m">% carteira</th></tr></thead><tbody>${g.rs.map(r=>`<tr class="click" data-act="editAtivo" data-id="${r.id}"><td><div style="font-weight:600">${esc(r.ticker)}</div><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome||'')}${r.mercado&&r.mercado.atualizadoEm?'':(r.nome?' · ':'')+'sem cotação'}</div></td><td class="num">${fmtQ(r.qtd)}</td><td class="num hide-m">${money(r.pm,r.moeda)}</td><td class="num">${r.preco!=null?money(r.preco,r.moeda):'—'}${Number.isFinite(r.variacao)&&r.variacao!==0?`<div class="hint ${r.variacao>=0?'pos':'neg'}">${pct(r.variacao/100)}</div>`:''}</td><td class="num">${money(r.valor,r.moeda)}${r.moeda==='USD'?`<div class="hint">${money(r.valorBRL)}</div>`:''}</td><td class="num ${r.resultado>=0?'pos':'neg'}">${money(r.resultado,r.moeda)}<div class="hint ${r.resultado>=0?'pos':'neg'}">${pct(r.resultadoPct)}</div></td><td class="num hide-m">${fmtN(r.peso*100,1)}%</td></tr>`).join('')}</tbody></table></div>`); }).join('') : '<div class="empty">Nenhum ativo em carteira. Lance sua primeira compra.</div>';
   } else if (tab==='operacoes'){
@@ -898,7 +900,7 @@ function vCarteira(){
     const filtros = `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
       <select id="pfAno" class="sel"><option value="">Todos os anos</option>${anos.map(a=>`<option ${pf.ano===a?'selected':''}>${a}</option>`).join('')}</select>
       <select id="pfMes" class="sel"><option value="">Todos os meses</option>${MESES.map((m,k)=>`<option value="${pad(k+1)}" ${pf.mes===pad(k+1)?'selected':''} style="text-transform:capitalize">${m}</option>`).join('')}</select>
-      <select id="pfCls" class="sel"><option value="">Todas as classes</option>${[...new Set(provs.map(p=>p.ativo.classe||'outro'))].map(c=>`<option value="${c}" ${pf.classe===c?'selected':''}>${CLASSES[c]||c}</option>`).join('')}</select>
+      <select id="pfCls" class="sel"><option value="">Todas as classes</option>${[...new Set(provs.map(p=>p.ativo.classe||'outro'))].sort((a,b)=>ordClasse(a)-ordClasse(b)).map(c=>`<option value="${c}" ${pf.classe===c?'selected':''}>${CLASSES[c]||c}</option>`).join('')}</select>
       <select id="pfTk" class="sel"><option value="">Todos os ativos</option>${tks.map(t=>`<option ${pf.ticker===t?'selected':''}>${esc(t)}</option>`).join('')}</select>
       ${(pf.ano||pf.mes||pf.ticker||pf.classe)?'<button class="btn sm ghost" id="pfLimpa">Limpar filtros</button>':''}
     </div>
@@ -913,7 +915,7 @@ function vCarteira(){
   } else if (tab==='rentab'){
     body = vRentabilidade();
   } else if (tab==='cadastro'){
-    const todos = list('ativos').map(a=>({...a, pos:posicao(a.ticker), m:D.mercado[safeId(a.ticker)], nOps:opsDo(a.ticker).length})).sort((a,b)=>(a.classe||'').localeCompare(b.classe||'')||a.ticker.localeCompare(b.ticker));
+    const todos = list('ativos').map(a=>({...a, pos:posicao(a.ticker), m:D.mercado[safeId(a.ticker)], nOps:opsDo(a.ticker).length})).sort((a,b)=>ordClasse(a.classe)-ordClasse(b.classe)||a.ticker.localeCompare(b.ticker));
     const grupos = {}; todos.forEach(a=>(grupos[a.classe||'outro']=grupos[a.classe||'outro']||[]).push(a));
     body = todos.length ? `<div class="hint" style="margin-bottom:8px">${todos.length} ativo${todos.length>1?'s':''} cadastrado${todos.length>1?'s':''}, inclusive os já vendidos. Clique para editar classe, moeda e a conta onde caem os proventos.</div>`
       + Object.entries(grupos).map(([cl,as])=>bloco('cad_'+cl, `<span class="dot" style="background:${CLASS_COR[cl]||'#64748b'}"></span>${CLASSES[cl]||cl} <span class="hint" style="font-weight:400">(${as.length})</span>`, `<div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Moeda</th><th>Proventos caem em</th><th class="num">Qtd</th><th class="num hide-m">Cotação</th><th class="num hide-m">Operações</th></tr></thead><tbody>${as.map(a=>`<tr class="click" data-act="editAtivo" data-id="${a.id}"><td><div style="font-weight:600">${esc(a.ticker)}</div>${a.nome?`<div class="hint">${esc(a.nome)}</div>`:''}</td><td class="hide-m">${a.moeda==='USD'?'US$':'R$'}</td><td>${a.contaProventosId&&D.contas[a.contaProventosId]?esc(contaNome(a.contaProventosId)):'<span class="hint">não lança</span>'}</td><td class="num">${a.pos.qtd>0?fmtQ(a.pos.qtd):a.nOps?'<span class="pill">vendido</span>':'<span class="pill">sem operações</span>'}</td><td class="num hide-m">${a.m&&a.m.preco!=null?money(+a.m.preco,a.moeda):'<span class="hint">sem cotação</span>'}${a.m&&a.m.atualizadoEm?`<div class="hint">${new Date(a.m.atualizadoEm).toLocaleDateString('pt-BR')}</div>`:''}</td><td class="num hide-m">${a.nOps}</td></tr>`).join('')}</tbody></table></div>`)).join('')
@@ -991,7 +993,7 @@ function mesesPeriodo(linhas, per){
 }
 function vRentabilidade(){
   const st = ui.rent = ui.rent || {per:'inicio', classe:''};
-  const classesUsadas=[...new Set(list('ativos').map(a=>a.classe||'outro'))];
+  const classesUsadas=[...new Set(list('ativos').map(a=>a.classe||'outro'))].sort((a,b)=>ordClasse(a)-ordClasse(b));
   const R = calcRentab(st.classe);
   const ctrl = `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px"><select id="rPer" class="sel">${[['inicio','Desde o início'],['ano','Este ano'],['12','Últimos 12 meses'],['24','Últimos 24 meses'],['60','Últimos 5 anos']].map(([v,n])=>`<option value="${v}" ${st.per===v?'selected':''}>${n}</option>`).join('')}</select>
     <select id="rCls" class="sel"><option value="">Todos os tipos</option>${classesUsadas.map(c=>`<option value="${c}" ${st.classe===c?'selected':''}>${CLASSES[c]||c}</option>`).join('')}</select></div>`;
@@ -1060,7 +1062,7 @@ function vPatrimonio(cart){
     <div class="card" style="margin-bottom:16px"><h3>Mês a mês</h3><div class="tblwrap" style="max-height:420px;overflow:auto"><table><thead><tr><th>Mês</th><th class="num">Aplicado</th><th class="num">Patrimônio</th><th class="num hide-m">Ganho de capital</th><th class="num hide-m">Proventos</th><th class="num">Resultado do mês</th><th class="num">Acumulado</th></tr></thead><tbody>${P.slice().reverse().map(l=>`<tr><td style="text-transform:capitalize">${mesCurto(l.ym)}</td><td class="num">${money(l.aplicado)}</td><td class="num">${money(l.patrimonio)}</td><td class="num hide-m ${l.ganho>=0?'pos':'neg'}">${money(l.ganho)}</td><td class="num hide-m">${money(l.prov)}</td><td class="num ${l.resultado>=0?'pos':'neg'}">${money(l.resultado)}</td><td class="num ${l.acumulado>=0?'pos':'neg'}">${money(l.acumulado)}</td></tr>`).join('')}</tbody></table></div></div>`;
   }
   const rows = cart.ativos;
-  const classesComPos = [...new Set(rows.map(r=>r.classe||'outro'))];
+  const classesComPos = [...new Set(rows.map(r=>r.classe||'outro'))].sort((a,b)=>ordClasse(a)-ordClasse(b));
   if (!st.classe || !classesComPos.includes(st.classe)) st.classe = classesComPos.includes('acao') ? 'acao' : (classesComPos[0]||'');
   const sub = rows.filter(r=>(r.classe||'outro')===st.classe);
   DONUTS.geral = [
@@ -1457,7 +1459,7 @@ function abrirAtivo(id, prefill){
   <form class="frm" id="fa">
     <label>Código (ticker)<input name="ticker" value="${esc(a.ticker||'')}" ${id?'disabled':''} placeholder="PETR4, MXRF11, VOO, BTC" style="text-transform:uppercase"></label>
     <label>Nome (opcional)<input name="nome" value="${esc(a.nome||'')}"></label>
-    <label>Classe<select name="classe">${Object.entries(CLASSES).map(([k,v])=>`<option value="${k}" ${a.classe===k?'selected':''}>${v}</option>`).join('')}</select></label>
+    <label>Classe<select name="classe">${ORDEM_CLASSES.map(k=>`<option value="${k}" ${a.classe===k?'selected':''}>${CLASSES[k]}</option>`).join('')}</select></label>
     <label>Moeda<select name="moeda"><option value="BRL" ${a.moeda!=='USD'?'selected':''}>R$</option><option value="USD" ${a.moeda==='USD'?'selected':''}>US$</option></select></label>
     <label class="full">Proventos caem na conta<select name="contaProventosId"><option value="">Não lançar automaticamente</option>${list('contas').filter(c=>!c.arquivada).map(c=>`<option value="${c.id}" ${a.contaProventosId===c.id?'selected':''}>${esc(c.nome)}</option>`).join('')}</select></label>
     <div class="full hint">Quando um provento deste ativo for pago, o app cria a receita nessa conta, marcada para você conferir.</div>
