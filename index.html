@@ -159,6 +159,8 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 @media (min-width:761px){.novaversao{bottom:24px}}
 .sel{padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
 .tfix{table-layout:fixed}.tfix th:first-child,.tfix td:first-child{width:24%}
+.donutwrap{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+.donutleg{max-height:220px;overflow:auto}
 .rtab td,.rtab th{padding:8px 6px;font-size:13px}
 .loading{padding:60px;text-align:center;color:var(--muted)}
 body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:none!important}
@@ -239,7 +241,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102003138';
+const APP_BUILD = '20261102003412';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -258,7 +260,7 @@ const SB_URL = 'https://cocaixvrkipbzfvjzykd.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNvY2FpeHZya2lwYnpmdmp6eWtkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1MTgyODEsImV4cCI6MjEwOTA5NDI4MX0.sB5TrWysO8Pu0Uf4TFHQx46Qh6o_PFov7dNWu4V2H4I';
 const COLS = ['contas','cartoes','categorias','transacoes','ativos','operacoes','mercado','proventos','config'];
 const D = {}, U = {}; COLS.forEach(c => { D[c] = {}; U[c] = {}; });   // D = visão combinada; U = dados do usuário
-const G = { mercado:{}, proventos:{}, config:{}, historico:{}, indices:{} };                      // dados de mercado (rotina diária)
+const G = { mercado:{}, proventos:{}, config:{}, historico:{}, indices:{}, setores:{} };                      // dados de mercado (rotina diária)
 const loaded = {}; let store = null, sb = null, userId = null, userEmail = '', userNome = '', canWrite = true, dbFail = false, started = null;
 const LINK_TIPO = (location.hash.match(/type=([a-z_]+)/)||[])[1] || ''; let linkTratado = false;
 let atualizando = null; // {desde: ms}
@@ -883,7 +885,7 @@ function vCarteira(){
         <div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Moeda</th><th>Proventos caem em</th><th class="num">Qtd</th><th class="num hide-m">Cotação</th><th class="num hide-m">Operações</th></tr></thead><tbody>${as.map(a=>`<tr class="click" data-act="editAtivo" data-id="${a.id}"><td><div style="font-weight:600">${esc(a.ticker)}</div>${a.nome?`<div class="hint">${esc(a.nome)}</div>`:''}</td><td class="hide-m">${a.moeda==='USD'?'US$':'R$'}</td><td>${a.contaProventosId&&D.contas[a.contaProventosId]?esc(contaNome(a.contaProventosId)):'<span class="hint">não lança</span>'}</td><td class="num">${a.pos.qtd>0?fmtQ(a.pos.qtd):a.nOps?'<span class="pill">vendido</span>':'<span class="pill">sem operações</span>'}</td><td class="num hide-m">${a.m&&a.m.preco!=null?money(+a.m.preco,a.moeda):'<span class="hint">sem cotação</span>'}${a.m&&a.m.atualizadoEm?`<div class="hint">${new Date(a.m.atualizadoEm).toLocaleDateString('pt-BR')}</div>`:''}</td><td class="num hide-m">${a.nOps}</td></tr>`).join('')}</tbody></table></div>`).join('')
       : '<div class="empty">Nenhum ativo cadastrado. Use "+ Ativo" ou lance uma compra.</div>';
   } else if (tab==='alocacao'){
-    body = cart.ativos.length? `<div class="grid g2"><div class="chartbox" style="height:260px"><canvas id="chAloc"></canvas></div><div>${Object.entries(alocacao(cart)).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="row" style="padding:7px 0;border-bottom:1px solid var(--line)"><span class="dot" style="background:${CLASS_COR[k]}"></span><span style="flex:1">${CLASSES[k]}</span><span class="num">${money(v)}</span><span class="num muted" style="width:60px">${fmtN(v/cart.total*100,1)}%</span></div>`).join('')}</div></div>` : '<div class="empty">Sem ativos</div>';
+    body = vPatrimonio(cart);
   }
   return `
   <div class="stickytop">
@@ -894,7 +896,7 @@ function vCarteira(){
     <div class="card"><div class="lbl">Proventos 12 meses</div><div class="val">${money(rec12)}</div><div class="sub">média ${money(rec12/12)}/mês</div></div>
     <div class="card"><div class="lbl">A receber</div><div class="val">${money(aRec)}</div><div class="sub">${atualizando? 'Buscando cotações e proventos…' : upd? 'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Aguardando 1ª atualização'} · US$ ${fmtN(c.usdbrl,2)}</div></div>
   </div>
-  <div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px;gap:8px"><div class="tabs">${[['ativos','Carteira'],['rentab','Rentabilidade'],['alocacao','Alocação'],['proventos','Proventos'],['operacoes','Operações'],['cadastro','Ativos cadastrados']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>${tab==='proventos'?'<button class="btn sm" data-act="novoProv">+ Provento manual</button>':''}</div>
+  <div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px;gap:8px"><div class="tabs">${[['ativos','Carteira'],['rentab','Rentabilidade'],['alocacao','Patrimônio'],['proventos','Proventos'],['operacoes','Operações'],['cadastro','Ativos cadastrados']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>${tab==='proventos'?'<button class="btn sm" data-act="novoProv">+ Provento manual</button>':''}</div>
   </div>
   <div class="card">${body}</div>`;
 }
@@ -984,10 +986,81 @@ function desenharRentab(){
   for (const n of ['CDI','IPCA','IFIX','IBOV','SMLL','IDIV','IVVB11']){ const s=serieIndice(n, meses); if(!s) continue; ds.push({label:n, data:[0].concat(s), borderColor:cores[n], backgroundColor:cores[n], fill:false, tension:.25, pointRadius:0, borderWidth:2, hidden: n!=='CDI', spanGaps:true, order:1}); }
   chart('chRent',{type:'line',data:{labels,datasets:ds},options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:cssv('--text'),boxWidth:12,boxHeight:3,usePointStyle:false}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${c.parsed.y==null?'—':fmtN(c.parsed.y,2)+'%'}`}}},scales:{x:{ticks:{color:cssv('--muted'),maxRotation:0,autoSkip:true},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>v+'%'},grid:{color:cssv('--line')}}}}});
 }
+/* ============ Patrimônio: evolução e distribuição ============ */
+function evolucaoPatrimonio(){
+  const R=calcRentab(''); if(!R) return null; let aplic=0, provAc=0;
+  return R.linhas.map(l=>{ aplic+=l.F; provAc+=l.Dv; const ganho=l.vFim-l.vIni-l.F; return {ym:l.ym, aplicado:aplic, patrimonio:l.vFim, ganho, prov:l.Dv, resultado:ganho+l.Dv, acumulado:l.vFim-aplic+provAc}; });
+}
+const EXT_TIPO = r => r.classe==='cripto' ? 'Cripto' : ((r.moeda==='USD' || r.classe==='bdr') ? 'Exterior' : 'Brasil');
+function agrupar(rows, chave){ const o={}; rows.forEach(r=>{ const k=chave(r)||'Não classificado'; o[k]=(o[k]||0)+r.valorBRL; }); return Object.entries(o).sort((a,b)=>b[1]-a[1]); }
+function topN(ents, n){ if (ents.length<=n) return ents; const resto=ents.slice(n-1).reduce((s,e)=>s+e[1],0); return ents.slice(0,n-1).concat([['Outros',resto]]); }
+const SET = r => G.setores[safeId(r.ticker)]||{};
+function blocoDonut(id, titulo, ents, cores){
+  const tot=ents.reduce((s,e)=>s+e[1],0);
+  return `<div class="card"><h3>${titulo}</h3>${ents.length? `<div class="donutwrap"><div class="chartbox" style="height:190px"><canvas id="${id}"></canvas></div><div class="donutleg">${ents.map(([k,v],i)=>`<div class="row" style="padding:3px 0;font-size:13px"><span class="dot" style="background:${(cores&&cores[k])||PALETTE[i%PALETTE.length]}"></span><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k)}</span><span class="num muted" style="width:52px">${fmtN(tot? v/tot*100:0,1)}%</span><span class="num hide-m" style="width:110px">${money(v)}</span></div>`).join('')}</div></div>`:'<div class="hint">Sem posições</div>'}</div>`;
+}
+const DONUTS = {};
+function vPatrimonio(cart){
+  const st = ui.patr = ui.patr || {per:'24', classe:''};
+  const ev = evolucaoPatrimonio();
+  let sec1 = '<div class="empty">Lance suas operações para ver a evolução.</div>';
+  if (ev){ const P = st.per==='tudo'? ev : ev.slice(-(+st.per));
+    const ult=ev[ev.length-1];
+    sec1 = `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:12px"><select id="pPer" class="sel">${[['12','Últimos 12 meses'],['24','Últimos 24 meses'],['tudo','Desde o início']].map(([v,n])=>`<option value="${v}" ${st.per===v?'selected':''}>${n}</option>`).join('')}</select></div>
+    <div class="grid g4" style="margin-bottom:12px">
+      <div class="card kpi"><div class="lbl">Patrimônio</div><div class="val">${money(ult.patrimonio)}</div></div>
+      <div class="card kpi"><div class="lbl">Valor aplicado</div><div class="val">${money(ult.aplicado)}</div><div class="sub">aportes − resgates</div></div>
+      <div class="card kpi"><div class="lbl">Resultado acumulado</div><div class="val ${ult.acumulado>=0?'pos':'neg'}">${money(ult.acumulado)}</div><div class="sub">ganho de capital + proventos</div></div>
+      <div class="card kpi"><div class="lbl">Resultado do mês</div><div class="val ${ult.resultado>=0?'pos':'neg'}">${money(ult.resultado)}</div><div class="sub">${mesNome(ult.ym)}</div></div>
+    </div>
+    <div class="grid g2" style="margin-bottom:12px">
+      <div class="card"><h3>Evolução do patrimônio</h3><div class="chartbox" style="height:260px"><canvas id="chEvol"></canvas></div></div>
+      <div class="card"><h3>Resultado mês a mês</h3><div class="chartbox" style="height:260px"><canvas id="chResMes"></canvas></div></div>
+    </div>
+    <div class="card" style="margin-bottom:16px"><h3>Mês a mês</h3><div class="tblwrap" style="max-height:420px;overflow:auto"><table><thead><tr><th>Mês</th><th class="num">Aplicado</th><th class="num">Patrimônio</th><th class="num hide-m">Ganho de capital</th><th class="num hide-m">Proventos</th><th class="num">Resultado do mês</th><th class="num">Acumulado</th></tr></thead><tbody>${P.slice().reverse().map(l=>`<tr><td style="text-transform:capitalize">${mesCurto(l.ym)}</td><td class="num">${money(l.aplicado)}</td><td class="num">${money(l.patrimonio)}</td><td class="num hide-m ${l.ganho>=0?'pos':'neg'}">${money(l.ganho)}</td><td class="num hide-m">${money(l.prov)}</td><td class="num ${l.resultado>=0?'pos':'neg'}">${money(l.resultado)}</td><td class="num ${l.acumulado>=0?'pos':'neg'}">${money(l.acumulado)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  }
+  const rows = cart.ativos;
+  const classesComPos = [...new Set(rows.map(r=>r.classe||'outro'))];
+  if (!st.classe || !classesComPos.includes(st.classe)) st.classe = classesComPos.includes('acao') ? 'acao' : (classesComPos[0]||'');
+  const sub = rows.filter(r=>(r.classe||'outro')===st.classe);
+  DONUTS.geral = [
+    ['dClasse','Por classe', agrupar(rows, r=>CLASSES[r.classe||'outro']), Object.fromEntries(Object.entries(CLASSES).map(([k,v])=>[v,CLASS_COR[k]]))],
+    ['dAtivo','Por ativo', topN(agrupar(rows, r=>r.ticker), 12)],
+    ['dExt','Brasil × exterior', agrupar(rows, EXT_TIPO), {Brasil:'#16a34a', Exterior:'#2563eb', Cripto:'#f59e0b'}]
+  ];
+  const det = [['dcAtivo', st.classe==='fii'?'Por fundo':'Por ativo', topN(agrupar(sub, r=>r.ticker), 14)]];
+  if (st.classe==='acao'){ det.push(['dcSetor','Por setor', agrupar(sub, r=>SET(r).setor)]); det.push(['dcSeg','Por segmento', agrupar(sub, r=>SET(r).segmento||SET(r).subsetor)]); }
+  if (st.classe==='fii'){ det.push(['dcSeg','Por segmento', agrupar(sub, r=>SET(r).segmento)]); det.push(['dcAnb','Por segmento ANBIMA', agrupar(sub, r=>SET(r).segmentoAnbima)]); }
+  DONUTS.det = det;
+  const semSetor = (st.classe==='acao'||st.classe==='fii') && sub.some(r=>!G.setores[safeId(r.ticker)]);
+  return sec1 + `<h3 style="margin:4px 0 10px">Distribuição da carteira</h3>
+    <div class="grid g3" style="margin-bottom:16px">${DONUTS.geral.map(([id,t,e,c])=>blocoDonut(id,t,e,c)).join('')}</div>
+    <div class="row" style="gap:8px;margin-bottom:10px;flex-wrap:wrap"><h3 style="margin:0">Dentro da classe</h3><select id="pCls" class="sel">${classesComPos.map(c=>`<option value="${c}" ${st.classe===c?'selected':''}>${CLASSES[c]||c}</option>`).join('')}</select></div>
+    ${semSetor?'<div class="hint" style="margin-bottom:8px">Setor e segmento de ativos novos chegam na próxima atualização das cotações.</div>':''}
+    <div class="grid g3">${det.map(([id,t,e])=>blocoDonut(id,t,e)).join('')}</div>`;
+}
+function desenharPatrimonio(){
+  const st=ui.patr;
+  if ($('#pPer')) $('#pPer').onchange=()=>{ st.per=$('#pPer').value; render(); };
+  if ($('#pCls')) $('#pCls').onchange=()=>{ st.classe=$('#pCls').value; render(); };
+  const ev=evolucaoPatrimonio();
+  if (ev && $('#chEvol')){ const P = st.per==='tudo'? ev : ev.slice(-(+st.per)); const lb=P.map(l=>mesCurto(l.ym));
+    const tk={color:cssv('--muted')}, gr={color:cssv('--line')};
+    const yfmt=v=>'R$ '+(Math.abs(v)>=1000? fmtN(v/1000,0)+' mil': fmtN(v,0));
+    chart('chEvol',{type:'bar',data:{labels:lb,datasets:[
+      {type:'line',label:'Patrimônio',data:P.map(l=>l.patrimonio),borderColor:cssv('--acc'),backgroundColor:cssv('--acc'),tension:.25,pointRadius:2,borderWidth:2.5,order:1},
+      {type:'bar',label:'Valor aplicado',data:P.map(l=>l.aplicado),backgroundColor:'rgba(100,116,139,.35)',borderRadius:3,order:2}]},
+      options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:cssv('--text'),boxWidth:12}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${money(c.parsed.y)}`}}},scales:{x:{ticks:{...tk,maxRotation:0,autoSkip:true},grid:{display:false}},y:{ticks:{...tk,callback:yfmt},grid:gr}}}});
+    chart('chResMes',{type:'bar',data:{labels:lb,datasets:[{label:'Resultado do mês',data:P.map(l=>l.resultado),backgroundColor:P.map(l=>l.resultado>=0?cssv('--pos'):cssv('--neg')),borderRadius:3}]},
+      options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{ const l=P[c.dataIndex]; return [` Resultado: ${money(l.resultado)}`,` Ganho de capital: ${money(l.ganho)}`,` Proventos: ${money(l.prov)}`]; }}}},scales:{x:{ticks:{...tk,maxRotation:0,autoSkip:true},grid:{display:false}},y:{ticks:{...tk,callback:yfmt},grid:gr}}}});
+  }
+  for (const [id,,ents,cores] of (DONUTS.geral||[]).concat(DONUTS.det||[])){ if(!ents.length || !$('#'+id)) continue;
+    chart(id,{type:'doughnut',data:{labels:ents.map(e=>e[0]),datasets:[{data:ents.map(e=>Math.round(e[1]*100)/100),backgroundColor:ents.map((e,i)=>(cores&&cores[e[0]])||PALETTE[i%PALETTE.length]),borderWidth:2,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}}); }
+}
 function alocacao(cart){ const o={}; cart.ativos.forEach(r=>o[r.classe||'outro']=(o[r.classe||'outro']||0)+r.valorBRL); return o; }
 afterRender.carteira = () => {
   if (ui.cartTab==='rentab') desenharRentab();
-  if (ui.cartTab==='alocacao'){ const cart=carteira(); const al=Object.entries(alocacao(cart)).sort((a,b)=>b[1]-a[1]); if(al.length) chart('chAloc',{type:'doughnut',data:{labels:al.map(a=>CLASSES[a[0]]),datasets:[{data:al.map(a=>Math.round(a[1]*100)/100),backgroundColor:al.map(a=>CLASS_COR[a[0]]),borderWidth:2,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}}); }
+  if (ui.cartTab==='alocacao') desenharPatrimonio();
   if (ui.cartTab==='proventos'){
     const provs=proventosCalc(); const base=monthOf(todayISO()); const meses=[...Array(12)].map((_,i)=>addMonths(base,i-11)).concat([addMonths(base,1),addMonths(base,2)]);
     const val = m => provs.filter(p=>p.dataPagamento && monthOf(p.dataPagamento)===m).reduce((s,p)=>s+p.liquidoBRL,0);
