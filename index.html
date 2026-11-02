@@ -259,7 +259,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102010528';
+const APP_BUILD = '20261102010812';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -680,7 +680,7 @@ const ACTS = {
     if (mov.length) await putMany(mov.map(t=>{ const a=t.antes||{}; const d={...t}; delete d.conciliacao; delete d.antes; delete d.conciliadoEm; d.contaId=a.contaId||null; d.cartaoId=a.cartaoId||null; d.faturaMes=a.faturaMes||null; d.pago=a.pago!==undefined?a.pago:true; return ['transacoes', t.id, d]; }));
     await delMany('transacoes', ids); toast('Desfeito'); },
   toggleArq: ()=>{ ui.verArquivadas=!ui.verArquivadas; render(); }, salvarCfg: salvarCfg, sair: ()=>sair(), mudarNome: ()=>pedirNome(), atualizarMercado: ()=>dispararAtualizacao(), importar: abrirImport, backup: copiarBackup, restaurar: abrirRestaurar,
-  goContas: ()=>go('contas'), goCarteira: ()=>go('carteira'), goTx: ()=>go('transacoes'),
+  goContas: ()=>go('contas'), goCarteira: ()=>{ ui.cartTab='proventos'; go('carteira'); }, goTx: ()=>go('transacoes'),
   togglePago: async id=>{ const t=D.transacoes[id]; await patch('transacoes', id, {pago:!t.pago}); }
 };
 
@@ -691,7 +691,9 @@ function vInicio(){
   const saldo = contas.reduce((s,ct)=>s+toBRL(saldoConta(ct.id), ct.moeda), 0);
   const pend = txAtivas().filter(t=>t.conferir).sort((a,b)=>b.data.localeCompare(a.data));
   const provs = proventosCalc();
-  const aReceber = provs.filter(p=>p.status!=='pago' && p.status==='areceber').sort((a,b)=>(a.dataPagamento||'9').localeCompare(b.dataPagamento||'9'));
+  const mesAtual = monthOf(todayISO());
+  const provMes = provs.filter(p=> p.dataPagamento ? monthOf(p.dataPagamento)===ui.mes : (ui.mes===mesAtual && p.status==='areceber')).sort((a,b)=>(a.dataPagamento||'9').localeCompare(b.dataPagamento||'9'));
+  const provRec = provMes.filter(p=>p.status==='pago'), provFut = provMes.filter(p=>p.status!=='pago');
   const cobertura = r.desp>0 ? r.prov/r.desp : 0;
   const cartoes = list('cartoes');
   const ym = monthOf(todayISO());
@@ -720,9 +722,9 @@ function vInicio(){
     <div class="card"><h3>Cartões · fatura de ${mesCurto(ym)}</h3>
       ${cartoes.map(k=>{ const f=fatura(k.id, ym); const lim=+k.limite||0; const u=limiteUsado(k.id); return `<div style="padding:6px 0"><div class="row"><span class="dot" style="background:${k.cor||'#64748b'}"></span><span style="flex:1">${esc(k.nome)}</span><span class="num">${money(f.total)}</span></div>${lim?`<div class="bar" style="margin-top:6px"><i style="width:${Math.min(100,u/lim*100)}%"></i></div><div class="hint">Limite disponível ${money(lim-u)}</div>`:''}</div>`; }).join('') || '<div class="hint">Nenhum cartão ainda</div>'}
     </div>
-    <div class="card"><h3>Proventos a receber</h3>
-      ${aReceber.slice(0,6).map(p=>`<div class="row" style="padding:6px 0"><span class="pill">${esc(p.ticker)}</span><span class="muted" style="flex:1;font-size:12.5px">${p.dataPagamento? 'paga '+fmtData(p.dataPagamento):'pagamento a definir'}</span><span class="num">${money(p.liquido,p.moeda)}</span></div>`).join('') || '<div class="hint">Nada previsto no momento</div>'}
-      ${aReceber.length? `<div class="hint" style="margin-top:6px">Total previsto: ${money(aReceber.reduce((s,p)=>s+p.liquidoBRL,0))}</div>`:''}
+    <div class="card"><h3>Proventos · ${mesCurto(ui.mes)}<div class="sp"></div><button class="btn sm ghost" data-act="goCarteira">Ver todos</button></h3>
+      <div class="donutleg" style="max-height:230px">${provMes.map(p=>`<div class="row" style="padding:6px 0"><span class="pill ${p.status==='pago'?'acc':''}">${esc(p.ticker)}</span><span class="muted" style="flex:1;font-size:12.5px">${p.status==='pago'? '✓ recebido '+fmtData(p.dataPagamento) : p.dataPagamento? 'paga '+fmtData(p.dataPagamento)+(p.pagamentoEstimado?' (est.)':''):'pagamento a definir'}</span><span class="num">${money(p.liquido,p.moeda)}</span></div>`).join('') || `<div class="hint">Nenhum provento ${ui.mes<mesAtual?'recebido':'previsto'} em ${mesNome(ui.mes)}</div>`}</div>
+      ${provMes.length? `<div class="hint" style="margin-top:6px">${provRec.length?`Recebido: <b>${money(provRec.reduce((s,p)=>s+p.liquidoBRL,0))}</b>`:''}${provRec.length&&provFut.length?' · ':''}${provFut.length?`A receber: <b>${money(provFut.reduce((s,p)=>s+p.liquidoBRL,0))}</b>`:''}</div>`:''}
     </div>
   </div>
   <div class="card mt"><h3>Últimos lançamentos de ${mesNome(ui.mes)}<div class="sp"></div><button class="btn sm" data-act="goTx">Ver todos</button></h3>${ultimos.map(txRow).join('') || '<div class="empty">Sem lançamentos</div>'}</div>`;
