@@ -522,7 +522,8 @@ def comparacao_setor(ticker, classe, info):
         return None
     ks = [k for k in ("pl", "pvp", "psr", "dy", "evEbit", "evEbitda", "pEbit", "margEbit", "margLiq", "liqCorr", "roic", "roe", "divBrutaPl", "cresRec5", "ffoYield", "capRate", "vacancia") if any(r.get(k) is not None for r in todos)]
     # mediana ignora valores sem sentido (P/L e EV negativos)
-    med = {k: _mediana([r.get(k) for r in todos if not (k in ("pl", "pvp", "evEbit", "evEbitda", "pEbit") and (r.get(k) or 0) <= 0)]) for k in ks}
+    med = {k: _mediana([r.get(k) for r in todos if r.get(k) not in (None, 0) or k in ("dy", "vacancia")
+                        if not (k in ("pl", "pvp", "evEbit", "evEbitda", "pEbit") and (r.get(k) or 0) <= 0)]) for k in ks}
     pares = sorted(todos, key=lambda r: -(r.get("liquidez") or 0))[:12]
     if ticker not in [r["t"] for r in pares]:
         meu = next((r for r in todos if r["t"] == ticker), None)
@@ -926,7 +927,7 @@ def main():
     log(f"Indicadores atualizados: {len(fund)}")
     if teste:
         for l in fund:
-            print("FUND", l["id"], json.dumps(l["data"], ensure_ascii=False)[:6000])
+            print("FUND", l["id"], json.dumps(l["data"], ensure_ascii=False))
 
     novos_set = setores_faltando(url, key, ativos, bool(teste))
     linhas += novos_set
