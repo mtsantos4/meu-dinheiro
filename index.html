@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102012646';
+const APP_BUILD = '20261102012950';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -930,7 +930,7 @@ function vCarteira(){
         <div class="row" style="justify-content:space-between;padding-top:8px"><span class="hint">Total recebido (desde o início)</span><b>${money(totAll)}</b></div>
         <div class="row" style="justify-content:space-between;padding-top:8px"><span class="hint">A receber</span><b>${money(totFutB)}</b></div>
         <div class="hint" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">Distribuição em 12 meses</div>
-        ${distE.length? `<div class="row" style="gap:10px;align-items:center;margin-top:6px"><div style="width:120px;height:120px;flex:none"><canvas id="chProvDist"></canvas></div><div style="flex:1;min-width:0">${distE.slice(0,5).map(([t,v],k)=>`<div class="row" style="font-size:12.5px;padding:2px 0"><span class="dot" style="background:${PALETTE[k%PALETTE.length]}"></span><span style="flex:1">${esc(t)}</span><span class="muted">${fmtN(tot12?v/tot12*100:0,1)}%</span></div>`).join('')}${distE.length>5?`<div class="hint">+ ${distE.length-5} ativos</div>`:''}</div></div>` : '<div class="hint" style="margin-top:6px">Nada recebido nos últimos 12 meses.</div>'}
+        ${distE.length? `<div class="row" style="gap:10px;align-items:center;margin-top:6px"><div style="width:120px;height:120px;flex:none"><canvas id="chProvDist"></canvas></div><div style="flex:1;min-width:0">${distE.slice(0,5).map(([t,v],k)=>`<div class="row" style="font-size:12.5px;padding:2px 0"><span class="dot" style="background:${corIdx(k)}"></span><span style="flex:1">${esc(t)}</span><span class="muted">${fmtN(tot12?v/tot12*100:0,1)}%</span></div>`).join('')}${distE.length>5?`<div class="hint">+ ${distE.length-5} ativos</div>`:''}</div></div>` : '<div class="hint" style="margin-top:6px">Nada recebido nos últimos 12 meses.</div>'}
       </div>`;
     const evolCard = `<div class="card"><h3>Evolução de proventos<div class="sp"></div><div class="segbtn"><button data-pm="mensal" class="${pf.modo!=='anual'?'on':''}">Mensal</button><button data-pm="anual" class="${pf.modo==='anual'?'on':''}">Anual</button></div></h3>
         <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">${pf.modo!=='anual'?selAno:''}${selCls}${selTk}${(pf.ano||pf.ticker||pf.classe)?'<button class="btn sm ghost" id="pfLimpa">Limpar</button>':''}</div>
@@ -1116,10 +1116,11 @@ function evolucaoPatrimonio(){
 const EXT_TIPO = r => r.classe==='cripto' ? 'Cripto' : ((r.moeda==='USD' || r.classe==='bdr') ? 'Exterior' : 'Brasil');
 function agrupar(rows, chave){ const o={}; rows.forEach(r=>{ const k=chave(r)||'Não classificado'; o[k]=(o[k]||0)+r.valorBRL; }); return Object.entries(o).sort((a,b)=>b[1]-a[1]); }
 function topN(ents, n){ if (ents.length<=n) return ents; const resto=ents.slice(n-1).reduce((s,e)=>s+e[1],0); return ents.slice(0,n-1).concat([['Outros',resto]]); }
+const corIdx = i => i < PALETTE.length ? PALETTE[i] : `hsl(${Math.round((i*137.508)%360)},62%,52%)`;
 const SET = r => G.setores[safeId(r.ticker)]||{};
 function blocoDonut(id, titulo, ents, cores){
   const tot=ents.reduce((s,e)=>s+e[1],0);
-  return `<div class="card"><h3>${titulo}</h3>${ents.length? `<div class="donutwrap"><div class="chartbox" style="height:190px"><canvas id="${id}"></canvas></div><div class="donutleg">${ents.map(([k,v],i)=>`<div class="row" style="padding:3px 0;font-size:13px"><span class="dot" style="background:${(cores&&cores[k])||PALETTE[i%PALETTE.length]}"></span><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k)}</span><span class="num muted" style="width:52px">${fmtN(tot? v/tot*100:0,1)}%</span><span class="num hide-m" style="width:110px">${money(v)}</span></div>`).join('')}</div></div>`:'<div class="hint">Sem posições</div>'}</div>`;
+  return `<div class="card"><h3>${titulo}</h3>${ents.length? `<div class="donutwrap"><div class="chartbox" style="height:190px"><canvas id="${id}"></canvas></div><div class="donutleg">${ents.map(([k,v],i)=>`<div class="row" style="padding:3px 0;font-size:13px"><span class="dot" style="background:${(cores&&cores[k])||corIdx(i)}"></span><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(k)}</span><span class="num muted" style="width:52px">${fmtN(tot? v/tot*100:0,1)}%</span><span class="num hide-m" style="width:110px">${money(v)}</span></div>`).join('')}</div></div>`:'<div class="hint">Sem posições</div>'}</div>`;
 }
 const DONUTS = {};
 function vPatrimonio(cart){
@@ -1147,10 +1148,10 @@ function vPatrimonio(cart){
   const sub = rows.filter(r=>(r.classe||'outro')===st.classe);
   DONUTS.geral = [
     ['dClasse','Por classe', agrupar(rows, r=>CLASSES[r.classe||'outro']), Object.fromEntries(Object.entries(CLASSES).map(([k,v])=>[v,CLASS_COR[k]]))],
-    ['dAtivo','Por ativo', topN(agrupar(rows, r=>r.ticker), 12)],
+    ['dAtivo','Por ativo', agrupar(rows, r=>r.ticker)],
     ['dExt','Brasil × exterior', agrupar(rows, EXT_TIPO), {Brasil:'#16a34a', Exterior:'#2563eb', Cripto:'#f59e0b'}]
   ];
-  const det = [['dcAtivo', st.classe==='fii'?'Por fundo':'Por ativo', topN(agrupar(sub, r=>r.ticker), 14)]];
+  const det = [['dcAtivo', st.classe==='fii'?'Por fundo':'Por ativo', agrupar(sub, r=>r.ticker)]];
   if (st.classe==='acao'){ det.push(['dcSetor','Por setor', agrupar(sub, r=>SET(r).setor)]); det.push(['dcSeg','Por segmento', agrupar(sub, r=>SET(r).segmento||SET(r).subsetor)]); }
   if (st.classe==='fii'){ det.push(['dcSeg','Por segmento', agrupar(sub, r=>SET(r).segmento)]); det.push(['dcAnb','Por segmento ANBIMA', agrupar(sub, r=>SET(r).segmentoAnbima)]); }
   DONUTS.det = det;
@@ -1177,7 +1178,7 @@ function desenharPatrimonio(){
       options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>{ const l=P[c.dataIndex]; return [` Resultado: ${money(l.resultado)}`,` Ganho de capital: ${money(l.ganho)}`,` Proventos: ${money(l.prov)}`]; }}}},scales:{x:{ticks:{...tk,maxRotation:0,autoSkip:true},grid:{display:false}},y:{ticks:{...tk,callback:yfmt},grid:gr}}}});
   }
   for (const [id,,ents,cores] of (DONUTS.geral||[]).concat(DONUTS.det||[])){ if(!ents.length || !$('#'+id)) continue;
-    chart(id,{type:'doughnut',data:{labels:ents.map(e=>e[0]),datasets:[{data:ents.map(e=>Math.round(e[1]*100)/100),backgroundColor:ents.map((e,i)=>(cores&&cores[e[0]])||PALETTE[i%PALETTE.length]),borderWidth:2,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}}); }
+    chart(id,{type:'doughnut',data:{labels:ents.map(e=>e[0]),datasets:[{data:ents.map(e=>Math.round(e[1]*100)/100),backgroundColor:ents.map((e,i)=>(cores&&cores[e[0]])||corIdx(i)),borderWidth:ents.length>20?1:2,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'62%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}}); }
 }
 function alocacao(cart){ const o={}; cart.ativos.forEach(r=>o[r.classe||'outro']=(o[r.classe||'outro']||0)+r.valorBRL); return o; }
 afterRender.carteira = () => {
@@ -1200,7 +1201,7 @@ afterRender.carteira = () => {
     chart('chProv',{type:'bar',data:{labels,datasets:[{label:'Recebidos',data:rec,backgroundColor:cssv('--acc'),borderRadius:4,stack:'p'},{label:'A receber',data:fut,backgroundColor:'rgba(148,163,184,.55)',borderRadius:4,stack:'p'}]},
       options:{maintainAspectRatio:false,onClick:(e,els)=>{ if(!els.length||pf.modo==='anual') return; const m=chaves[els[0].index]; const el=document.getElementById('pm_'+m); if(el){ const bl=el.querySelector('.bloco'); if(bl&&bl.classList.contains('fechado')) bl.querySelector('[data-toggle]').click(); el.scrollIntoView({behavior:'smooth',block:'start'}); } },
         plugins:{legend:{labels:{color:cssv('--text'),boxWidth:12}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${money(c.parsed.y)}`}}},scales:{x:{stacked:true,ticks:{...tk,maxRotation:0,autoSkip:true},grid:{display:false}},y:{stacked:true,ticks:{...tk,callback:v=>'R$ '+fmtN(v,0)},grid:{color:cssv('--line')}}}}});
-    const dE=DONUTS.prov||[]; if (dE.length && $('#chProvDist')) chart('chProvDist',{type:'doughnut',data:{labels:dE.map(e=>e[0]),datasets:[{data:dE.map(e=>Math.round(e[1]*100)/100),backgroundColor:dE.map((e,k)=>PALETTE[k%PALETTE.length]),borderWidth:1,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'55%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}});
+    const dE=DONUTS.prov||[]; if (dE.length && $('#chProvDist')) chart('chProvDist',{type:'doughnut',data:{labels:dE.map(e=>e[0]),datasets:[{data:dE.map(e=>Math.round(e[1]*100)/100),backgroundColor:dE.map((e,k)=>corIdx(k)),borderWidth:1,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'55%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}});
   }
 };
 
