@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102163531';
+const APP_BUILD = '20261102163724';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -1850,12 +1850,12 @@ function abrirInfoAtivo(tk){
   const media5 = comDado.length ? anos5.reduce((s,y)=>s+(divAno[y]||0),0)/5 : null;
   const temDiv = classe!=='cripto' && (div12>0 || media5>0);
   const graham = classe==='acao' && ind.lpa>0 && ind.vpa>0 ? Math.sqrt(22.5*ind.lpa*ind.vpa) : null;
-  const nome = info.empresa || a.nome || st.nome || '';
+  const nome = a.nome || st.nome || info.empresa || '';
   const setorTxt = [st.setor||info.setor, st.segmento||info.segmento||info.subsetor||info.industria||info.categoria].filter(Boolean).filter((v,i,arr)=>arr.indexOf(v)===i).join(' · ');
   const margem = (alvo) => preco && alvo ? alvo/preco-1 : null;
   const caixaPreco = (titulo, valor, sub, dica) => { const mg = margem(valor); return `<div class="card kpi" style="margin:0"><div class="lbl" title="${esc(dica||'')}">${titulo}</div><div class="val" style="font-size:20px">${valor? money(valor, moedaDiv):'—'}</div>${mg!=null?`<div class="sub"><span class="pctpill ${mg>=0?'pos':'neg'}">${mg>=0?'▲ ':'▼ '}${pct(mg)}</span> ${mg>=0?'acima do preço atual':'abaixo do preço atual'}</div>`:''}<div class="hint" style="margin-top:4px">${sub}</div></div>`; };
   const r52 = (ind.min52 && ind.max52 && preco) ? Math.max(0,Math.min(1,(preco-ind.min52)/(ind.max52-ind.min52||1))) : null;
-  const indItens = IND_DEF.filter(([k])=>Number.isFinite(ind[k])).map(([k,l,t])=>`<div class="indcel" ${IND_DICA[k]?`title="${esc(IND_DICA[k])}"`:''}><span class="hint">${l}${IND_DICA[k]?' ⓘ':''}</span><b>${fmtInd(ind[k], t, ['M','$'].includes(t)? (['etf_ext','stock_ext','bdr'].includes(classe) && t==='M' ? 'USD' : moedaDiv) : moedaDiv)}</b></div>`).join('');
+  const indItens = IND_DEF.filter(([k])=>Number.isFinite(ind[k])).map(([k,l,t])=>`<div class="indcel" ${IND_DICA[k]?`title="${esc(IND_DICA[k])}"`:''}><span class="hint">${l}${IND_DICA[k]?' ⓘ':''}</span><b>${fmtInd(ind[k], t, ['M','$'].includes(t)? (['etf_ext','stock_ext','bdr','cripto'].includes(classe) && t==='M' ? 'USD' : moedaDiv) : moedaDiv)}</b></div>`).join('');
   const txtInfo = [['Gestão',info.gestao],['Mandato',info.mandato],['Tipo',info.tipo],['País',info.pais],['Gestora',info.familia],['Último balanço',info.balanco],['Ativo nos EUA',info.ativoEua]].filter(x=>x[1]).map(([l,v])=>`<div class="indcel"><span class="hint">${l}</span><b style="font-size:13.5px">${esc(v)}</b></div>`).join('');
   const anosG = Object.keys(divAno).sort().slice(-8);
   modal(`<div class="row" style="align-items:flex-start;gap:12px"><div style="flex:1;min-width:0"><h2 style="margin:0">${esc(tk)} <span class="pill" style="vertical-align:middle;font-size:12px">${CLASSES[classe]||classe}</span></h2><div class="hint">${esc(nome)}${setorTxt?' · '+esc(setorTxt):''}</div></div>

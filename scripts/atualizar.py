@@ -510,7 +510,7 @@ def fundamentos_ativo(a, agora):
             log(f"  yahoo resumo {t} ({sym_y}): {e}")
     if "min52" not in d:
         try:
-            sym52 = yahoo_symbol(t, classe, moeda)
+            sym52 = f"{t}-USD" if classe == "cripto" else yahoo_symbol(t, classe, moeda)
             r52 = yahoo_chart(sym52, "1y")
             q = ((r52.get("indicators") or {}).get("quote") or [{}])[0]
             lo = [x for x in (q.get("low") or []) if x]; hi = [x for x in (q.get("high") or []) if x]
