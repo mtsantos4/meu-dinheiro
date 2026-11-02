@@ -433,6 +433,7 @@ _FUND = {
     "FFO Yield": "ffoYield", "FFO/Cota": "ffoCota", "Dividendo/cota": "divCota", "VP/Cota": "vpCota", "Nro. Cotas": "nCotas",
     "Patrim Líquido": "patrimLiq", "Ativos": "ativo", "Qtd imóveis": "qtdImoveis", "Área (m2)": "area", "Cap Rate": "capRate",
     "Qtd Unidades": "qtdUnidades", "Aluguel/m2": "aluguelM2", "Vacância Média": "vacancia", "Receita": "receita12", "Rend. Distribuído": "rendDistrib12", "FFO": "ffo12",
+    "Vol $ méd (2m)": "liquidez", "P/Cap. Giro": "pCapGiro", "P/Ativ Circ Liq": "pAcl", "Ativo Circulante": "ativoCirc",
 }
 _FUND_TXT = {"Setor": "setor", "Subsetor": "subsetor", "Empresa": "empresa", "Nome": "empresa", "Segmento": "segmento", "Gestão": "gestao", "Mandato": "mandato", "Últ balanço processado": "balanco", "Tipo": "tipo"}
 
@@ -454,11 +455,158 @@ def fundamentus(ticker):
             info[_FUND_TXT[a]] = b
     if not d:
         raise RuntimeError("sem dados")
+    m = re.search(r'resultado\.php\?setor=(\d+)', txt)
+    if m:
+        info["setorId"] = m.group(1)
     if d.get("valorFirma") and d.get("evEbitda"):
         d["ebitda"] = round(d["valorFirma"] / d["evEbitda"])
         if d.get("divLiq") is not None:
             d["divLiqEbitda"] = round(d["divLiq"] / d["ebitda"], 2)
     return d, info
+
+# ---- comparação com o setor (Fundamentus) ----
+_SETOR_CACHE = {}
+_FUND_COLS = {"Papel": "t", "Cotação": "preco", "P/L": "pl", "P/VP": "pvp", "PSR": "psr", "Div.Yield": "dy", "P/Ativo": "pAtivos", "P/Cap.Giro": "pCapGiro",
+              "P/EBIT": "pEbit", "P/Ativ Circ.Liq": "pAcl", "EV/EBIT": "evEbit", "EV/EBITDA": "evEbitda", "Mrg Ebit": "margEbit", "Mrg. Líq.": "margLiq",
+              "Liq. Corr.": "liqCorr", "ROIC": "roic", "ROE": "roe", "Liq.2meses": "liquidez", "Patrim. Líq": "patrimLiq", "Dív.Brut/ Patrim.": "divBrutaPl", "Cresc. Rec.5a": "cresRec5",
+              # FIIs
+              "Segmento": "segmento", "FFO Yield": "ffoYield", "Dividend Yield": "dy", "Valor de Mercado": "valorMercado", "Liquidez": "liquidez", "Qtd de imóveis": "qtdImoveis",
+              "Preço do m2": "precoM2", "Aluguel por m2": "aluguelM2", "Cap Rate": "capRate", "Vacância Média": "vacancia"}
+
+def _tabela_fundamentus(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": UA}), timeout=30) as r:
+        txt = r.read().decode("iso-8859-1", "replace")
+    cab = [_html.unescape(re.sub(r"<[^>]+>", "", c)).strip() for c in re.findall(r"<th[^>]*>(.*?)</th>", txt, re.S)]
+    linhas = []
+    for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", txt, re.S)[1:]:
+        cels = [_html.unescape(re.sub(r"<[^>]+>", "", c)).strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
+        if len(cels) != len(cab):
+            continue
+        row = {}
+        for h, v in zip(cab, cels):
+            k = _FUND_COLS.get(h)
+            if not k:
+                continue
+            if k in ("t", "segmento"):
+                row[k] = v
+            else:
+                try:
+                    row[k] = float(v.replace("%", "").replace(".", "").replace(",", ".")) if v not in ("", "-") else None
+                except ValueError:
+                    row[k] = None
+        if row.get("t"):
+            linhas.append(row)
+    return linhas
+
+def _mediana(vals):
+    v = sorted(x for x in vals if x is not None)
+    if not v:
+        return None
+    n = len(v); return round(v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2, 4)
+
+def comparacao_setor(ticker, classe, info):
+    if classe == "fii":
+        chave = "fii"
+        if chave not in _SETOR_CACHE:
+            _SETOR_CACHE[chave] = _tabela_fundamentus("https://www.fundamentus.com.br/fii_resultado.php")
+        seg = (info.get("segmento") or "").lower()
+        todos = [r for r in _SETOR_CACHE[chave] if (r.get("segmento") or "").lower() == seg and (r.get("liquidez") or 0) > 0] if seg else []
+    else:
+        sid = info.get("setorId")
+        if not sid:
+            return None
+        if sid not in _SETOR_CACHE:
+            _SETOR_CACHE[sid] = _tabela_fundamentus(f"https://www.fundamentus.com.br/resultado.php?setor={sid}")
+        todos = [r for r in _SETOR_CACHE[sid] if (r.get("liquidez") or 0) > 0]
+    if len(todos) < 2:
+        return None
+    ks = [k for k in ("pl", "pvp", "psr", "dy", "evEbit", "evEbitda", "pEbit", "margEbit", "margLiq", "liqCorr", "roic", "roe", "divBrutaPl", "cresRec5", "ffoYield", "capRate", "vacancia") if any(r.get(k) is not None for r in todos)]
+    # mediana ignora valores sem sentido (P/L e EV negativos)
+    med = {k: _mediana([r.get(k) for r in todos if not (k in ("pl", "pvp", "evEbit", "evEbitda", "pEbit") and (r.get(k) or 0) <= 0)]) for k in ks}
+    pares = sorted(todos, key=lambda r: -(r.get("liquidez") or 0))[:12]
+    if ticker not in [r["t"] for r in pares]:
+        meu = next((r for r in todos if r["t"] == ticker), None)
+        if meu:
+            pares = [meu] + pares[:11]
+    campos = ("t", "preco", "dy", "pl", "pvp", "roe", "margLiq") if classe != "fii" else ("t", "preco", "dy", "pvp", "valorMercado", "liquidez", "vacancia")
+    return {"n": len(todos), "mediana": {k: v for k, v in med.items() if v is not None}, "pares": [{k: r.get(k) for k in campos} for r in pares]}
+
+# ---- dados da empresa na B3 ----
+def b3_empresa(ticker):
+    raiz = re.match(r"[A-Z0-9]{4}", ticker).group(0)
+    base = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/"
+    lst = http_json(base + "GetInitialCompanies/" + b3_b64({"language": "pt-br", "pageNumber": 1, "pageSize": 20, "company": raiz}))
+    emp = next((x for x in (lst or {}).get("results", []) if x.get("issuingCompany") == raiz), None)
+    if not emp:
+        return {}
+    det = http_json(base + "GetDetail/" + b3_b64({"codeCVM": emp["codeCVM"], "language": "pt-br"})) or {}
+    out = {"cnpj": det.get("cnpj") or emp.get("cnpj"), "atividade": det.get("activity"), "site": det.get("website"),
+           "listagem": det.get("market") or emp.get("segment"), "nomeB3": det.get("companyName"), "inicioB3": (emp.get("dateListing") or "")[:10] or None}
+    if os.environ.get("DEBUG"):
+        print("B3 DETAIL", ticker, json.dumps(det, ensure_ascii=False)[:1500], json.dumps(emp, ensure_ascii=False)[:600])
+    return {k: v for k, v in out.items() if v}
+
+# ---- rentabilidade histórica (cotação ajustada por proventos) ----
+def rentabilidade_hist(sym, ipca):
+    def serie(rng, intervalo):
+        js = http_json(f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range={rng}&interval={intervalo}")
+        r = ((js.get("chart") or {}).get("result") or [None])[0]
+        ts = r.get("timestamp") or []
+        adj = (((r.get("indicators") or {}).get("adjclose") or [{}])[0].get("adjclose")) or (((r.get("indicators") or {}).get("quote") or [{}])[0].get("close")) or []
+        return [(dt.datetime.fromtimestamp(t, dt.timezone.utc).date(), float(v)) for t, v in zip(ts, adj) if v], (r.get("meta") or {})
+    diario, meta = serie("2y", "1d")
+    mensal, _ = serie("max", "1mo")
+    if not diario:
+        return {}, None
+    hoje_d, ult = diario[-1]
+    def valor_em(data_alvo):
+        fonte = diario if data_alvo >= diario[0][0] else mensal
+        cand = [v for d, v in fonte if d <= data_alvo]
+        return cand[-1] if cand else None
+    def inflacao(meses):
+        ks = sorted(ipca)[-meses:] if ipca else []
+        if len(ks) < meses * 0.9:
+            return None
+        f = 1.0
+        for k in ks:
+            f *= 1 + ipca[k] / 100
+        return f
+    out = {}
+    for rotulo, dias, meses in (("1m", 30, 1), ("3m", 91, 3), ("1a", 365, 12), ("2a", 730, 24), ("5a", 1826, 60), ("10a", 3652, 120)):
+        alvo = hoje_d - dt.timedelta(days=dias)
+        if mensal and alvo < mensal[0][0]:
+            continue
+        v0 = valor_em(alvo)
+        if not v0:
+            continue
+        nom = ult / v0 - 1
+        inf = inflacao(meses)
+        out[rotulo] = {"nominal": round(nom * 100, 2), "real": round(((1 + nom) / inf - 1) * 100, 2) if inf else None}
+    primeira = meta.get("firstTradeDate")
+    inicio = dt.datetime.fromtimestamp(primeira, dt.timezone.utc).date().isoformat() if primeira else (mensal[0][0].isoformat() if mensal else None)
+    return out, inicio
+
+# ---- receitas e lucros (Yahoo timeseries) ----
+def receitas_lucros(sym):
+    tipos = "annualTotalRevenue,annualNetIncome,quarterlyTotalRevenue,quarterlyNetIncome"
+    p1 = int((dt.datetime.now() - dt.timedelta(days=365 * 12)).timestamp())
+    url = f"https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/{urllib.parse.quote(sym)}?type={tipos}&period1={p1}&period2={int(time.time())}"
+    js = http_json(url)
+    out = {}
+    for r in ((js.get("timeseries") or {}).get("result") or []):
+        tipo = (r.get("meta") or {}).get("type", [None])[0]
+        for x in r.get(tipo) or []:
+            if not x or not x.get("asOfDate"):
+                continue
+            v = (x.get("reportedValue") or {}).get("raw")
+            if v is None:
+                continue
+            per = x["asOfDate"][:4] if tipo.startswith("annual") else x["asOfDate"][:7]
+            grupo = "anual" if tipo.startswith("annual") else "trimestral"
+            campo = "receita" if "Revenue" in tipo else "lucro"
+            out.setdefault(grupo, {}).setdefault(per, {})[campo] = v
+            out.setdefault("moeda", x.get("currencyCode"))
+    return out
 
 BDR_EUA = {"AMZO34": "AMZN", "GOGL34": "GOOGL", "GOGL35": "GOOG", "M1TA34": "META", "NVDC34": "NVDA", "BERK34": "BRK-B", "COCA34": "KO", "DISB34": "DIS",
            "MCDC34": "MCD", "JNJB34": "JNJ", "PGCO34": "PG", "WALM34": "WMT", "VISA34": "V", "MSCD34": "MA", "PEPB34": "PEP", "JPMC34": "JPM", "BOAC34": "BAC",
@@ -476,14 +624,34 @@ def dividendos_anuais(sym):
         out[y] = round(out.get(y, 0) + float(ev["amount"]), 6)
     return out
 
-def fundamentos_ativo(a, agora):
+def dividendos_b3_por_ano(provs):
+    out = {}
+    for p in provs or []:
+        dc = p.get("dataCom")
+        if dc:
+            out[dc[:4]] = round(out.get(dc[:4], 0) + float(p["valor"]), 8)
+    return out
+
+def fundamentos_ativo(a, agora, ctx):
     t, classe, moeda = a["ticker"], a["classe"], a["moeda"]
-    d, info, fontes = {}, {}, []
+    d, info, fontes, extra = {}, {}, [], {}
     if classe in ("acao", "fii"):
         try:
             d, info = fundamentus(t); fontes.append("Fundamentus")
         except Exception as e:
             log(f"  fundamentus {t}: {e}")
+        if d:
+            try:
+                c = comparacao_setor(t, classe, info)
+                if c:
+                    extra["setorComp"] = c
+            except Exception as e:
+                log(f"  setor (comparação) {t}: {e}")
+    if classe == "acao":
+        try:
+            info.update({k: v for k, v in b3_empresa(t).items() if k not in info}); fontes.append("B3")
+        except Exception as e:
+            log(f"  B3 empresa {t}: {e}")
     sym_y = None
     if classe == "bdr":
         sym_y = BDR_EUA.get(t) or re.match(r"[A-Z]+", t).group(0)
@@ -491,7 +659,7 @@ def fundamentos_ativo(a, agora):
         sym_y = t
     elif classe == "cripto":
         sym_y = f"{t}-USD"
-    elif classe in ("etf",) or (classe in ("acao", "fii") and not d):
+    elif classe == "etf" or (classe in ("acao", "fii") and not d):
         sym_y = yahoo_symbol(t, classe, moeda)
     if sym_y:
         try:
@@ -508,34 +676,67 @@ def fundamentos_ativo(a, agora):
                 info["ativoEua"] = sym_y
         except Exception as e:
             log(f"  yahoo resumo {t} ({sym_y}): {e}")
+    sym_local = f"{t}-USD" if classe == "cripto" else yahoo_symbol(t, classe, moeda)
     if "min52" not in d:
         try:
-            sym52 = f"{t}-USD" if classe == "cripto" else yahoo_symbol(t, classe, moeda)
-            r52 = yahoo_chart(sym52, "1y")
+            r52 = yahoo_chart(sym_local, "1y")
             q = ((r52.get("indicators") or {}).get("quote") or [{}])[0]
             lo = [x for x in (q.get("low") or []) if x]; hi = [x for x in (q.get("high") or []) if x]
             if lo and hi:
-                f = USD[0] if (classe == "cripto" and sym52.endswith("-USD") and USD[0]) else 1
+                f = USD[0] if (classe == "cripto" and USD[0]) else 1
                 d["min52"], d["max52"] = round(min(lo) * f, 6), round(max(hi) * f, 6)
         except Exception as e:
             log(f"  52 semanas {t}: {e}")
-    div = {}
-    if classe != "cripto":
+    # rentabilidade histórica (já considera proventos reinvestidos)
+    try:
+        rent, inicio = rentabilidade_hist(sym_local, ctx.get("ipca") or {})
+        if rent:
+            extra["rent"] = rent
+        if inicio:
+            info.setdefault("inicioNegociacao", inicio)
+    except Exception as e:
+        log(f"  rentabilidade {t}: {e}")
+    # receitas e lucros (empresas)
+    if classe in ("acao", "bdr", "stock_ext"):
         try:
-            div = dividendos_anuais(yahoo_symbol(t, classe, moeda))
+            rl = receitas_lucros(sym_y if classe == "bdr" else yahoo_symbol(t, classe, moeda))
+            if rl.get("anual") or rl.get("trimestral"):
+                extra["resultados"] = rl
+        except Exception as e:
+            log(f"  receitas/lucros {t}: {e}")
+    # proventos por ano: B3 (completo, com JCP) quando houver; senão Yahoo
+    div, fonte_div = {}, None
+    provs_b3 = (ctx.get("provs") or {}).get(t)
+    if provs_b3:
+        div, fonte_div = dividendos_b3_por_ano(provs_b3), ctx.get("fonteProv", {}).get(t) or "B3"
+    elif classe != "cripto":
+        try:
+            div, fonte_div = dividendos_anuais(sym_local), "Yahoo Finance"
         except Exception as e:
             log(f"  dividendos {t}: {e}")
-    if not d and not div:
+    # preço médio de cada ano (para o DY histórico)
+    precoAno = {}
+    if div and classe != "cripto":
+        try:
+            h, _ = yahoo_mensal(sym_local, "10y")
+            soma = {}
+            for ym_, v in h.items():
+                soma.setdefault(ym_[:4], []).append(v)
+            precoAno = {y: round(sum(v) / len(v), 4) for y, v in soma.items()}
+        except Exception as e:
+            log(f"  preço médio anual {t}: {e}")
+    if not d and not div and not extra:
         return None
-    return {"ticker": t, "classe": classe, "ind": d, "info": info, "divAnual": div, "moedaDiv": "USD" if (classe in ("etf_ext", "stock_ext") or moeda == "USD") else "BRL",
-            "fontes": fontes, "atualizadoEm": agora}
+    return {"ticker": t, "classe": classe, "ind": d, "info": info, "divAnual": div, "fonteDiv": fonte_div, "precoAno": precoAno,
+            "moedaDiv": "USD" if (classe in ("etf_ext", "stock_ext") or moeda == "USD") else "BRL", **extra,
+            "fontes": fontes, "atualizadoEm": agora, "v": FUND_V}
 
-def fundamentos_faltando(url, key, ativos, teste, agora):
+def fundamentos_faltando(url, key, ativos, teste, agora, ctx):
     idade = {}
     if not teste:
         try:
-            for r in http_json(f"{url}/rest/v1/mercado_docs?col=eq.fundamentos&select=id,data->>atualizadoEm", headers=sb_headers(key)) or []:
-                idade[r["id"]] = r.get("atualizadoEm") or ""
+            for r in http_json(f"{url}/rest/v1/mercado_docs?col=eq.fundamentos&select=id,data->>atualizadoEm,data->>v", headers=sb_headers(key)) or []:
+                idade[r["id"]] = (r.get("atualizadoEm") or "") if str(r.get("v")) == str(FUND_V) else ""
         except Exception as e:
             log(f"  fundamentos existentes: {e}")
     limite = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=20)).isoformat(timespec="seconds")
@@ -544,7 +745,7 @@ def fundamentos_faltando(url, key, ativos, teste, agora):
         if idade.get(safe_id(a["ticker"]), "") > limite:
             continue
         try:
-            f = fundamentos_ativo(a, agora)
+            f = fundamentos_ativo(a, agora, ctx)
             if f:
                 out.append({"col": "fundamentos", "id": safe_id(a["ticker"]), "data": f})
         except Exception as e:
@@ -599,6 +800,9 @@ def processar(a, agora):
             provs, fonte_prov = yahoo_dividendos(r, "BRL"), "Yahoo (sem data de pagamento)"
     return mercado, provs, fonte_prov, avisos
 
+CTX_PROVS, CTX_FONTE = {}, {}
+FUND_V = 2  # aumente para forçar a rebusca dos indicadores
+
 def main():
     url, key = os.environ.get("SUPABASE_URL", "").rstrip("/"), os.environ.get("SUPABASE_SERVICE_KEY", "")
     teste = os.environ.get("TICKERS", "").strip()
@@ -649,6 +853,8 @@ def main():
                 "ticker": a["ticker"], "tipo": tipo, "dataCom": p["dataCom"], "dataPagamento": p["dataPagamento"],
                 "valor": p["valor"], "moeda": p["moeda"], "fonte": fonte_prov, "pagamentoEstimado": bool(p.get("estimado")), "atualizadoEm": agora}})
             n_prov += 1
+        if provs and fonte_prov in ("B3", "Status Invest"):
+            CTX_PROVS[a["ticker"]] = provs; CTX_FONTE[a["ticker"]] = fonte_prov
         recentes = sorted(provs, key=lambda x: x["dataCom"], reverse=True)[:3]
         resumo = "; ".join(f"{p['dataCom']}→{p['dataPagamento'] or '?'} {p['valor']} {tipo_padrao(p['tipoTxt'], a['classe'])}" for p in recentes)
         log(f"{a['ticker']:<8} preço={mercado['preco'] if mercado else '—':<10} proventos={len(provs):<3} fonte={fonte_prov or '—'}  {resumo}" + (f"  AVISOS: {' | '.join(avisos)}" if avisos else ""))
@@ -673,12 +879,12 @@ def main():
         time.sleep(0.25)
     log(f"Históricos mensais: {n_hist}/{len(ativos)}")
 
-    fund = fundamentos_faltando(url, key, ativos, bool(teste), agora)
+    fund = fundamentos_faltando(url, key, ativos, bool(teste), agora, {"provs": CTX_PROVS, "fonteProv": CTX_FONTE, "ipca": idx.get("IPCA") or {}})
     linhas += fund
     log(f"Indicadores atualizados: {len(fund)}")
     if teste:
         for l in fund:
-            print("FUND", l["id"], json.dumps(l["data"], ensure_ascii=False)[:1500])
+            print("FUND", l["id"], json.dumps(l["data"], ensure_ascii=False)[:6000])
 
     novos_set = setores_faltando(url, key, ativos, bool(teste))
     linhas += novos_set
