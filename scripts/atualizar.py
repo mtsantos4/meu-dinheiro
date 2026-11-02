@@ -14,7 +14,7 @@ import base64, datetime as dt, json, os, re, sys, time, urllib.error, urllib.par
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 HOJE = dt.date.today()
-JANELA_DIAS = 400
+JANELA_DIAS = 2200  # ~6 anos de proventos (para a rentabilidade histórica)
 LOG = []
 USD = [None]
 
@@ -140,6 +140,58 @@ def dolar():
         log(f"  dólar Yahoo falhou: {e}")
     js = http_json("https://economia.awesomeapi.com.br/json/last/USD-BRL")
     return round(float(js["USDBRL"]["bid"]), 4), "AwesomeAPI"
+
+# ---------------- Histórico mensal (rentabilidade) ----------------
+def yahoo_mensal(sym, rng="10y"):
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(sym)}?range={rng}&interval=1mo"
+    js = http_json(url)
+    r = ((js.get("chart") or {}).get("result") or [None])[0]
+    if not r:
+        raise RuntimeError("sem histórico")
+    ts = r.get("timestamp") or []
+    cl = (((r.get("indicators") or {}).get("quote") or [{}])[0].get("close")) or []
+    out = {}
+    for t, c in zip(ts, cl):
+        if c is None:
+            continue
+        d = dt.datetime.fromtimestamp(t + 6 * 3600, dt.timezone.utc)  # margem p/ fuso
+        out[f"{d.year}-{d.month:02d}"] = round(float(c), 6)
+    return out, (r.get("meta") or {}).get("currency")
+
+def bcb_mensal(serie, desde="01/01/2015"):
+    js = http_json(f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{serie}/dados?formato=json&dataInicial={desde}")
+    out = {}
+    for x in js or []:
+        d = x.get("data", ""); v = num(x.get("valor"))
+        m = re.match(r"\d{2}/(\d{2})/(\d{4})", d)
+        if m and v is not None:
+            out[f"{m.group(2)}-{m.group(1)}"] = v
+    return out
+
+def indices_mensais():
+    idx, erros = {}, []
+    for nome, serie in (("CDI", 4391), ("IPCA", 433)):
+        try:
+            idx[nome] = bcb_mensal(serie)
+        except Exception as e:
+            erros.append(f"{nome}: {e}")
+    for nome, sym in (("IBOV", "^BVSP"), ("IFIX", "XFIX11.SA"), ("SMLL", "SMAL11.SA"), ("IDIV", "DIVO11.SA"), ("IVVB11", "IVVB11.SA"), ("USDBRL", "BRL=X")):
+        try:
+            idx[nome], _ = yahoo_mensal(sym)
+        except Exception as e:
+            erros.append(f"{nome}: {e}")
+    return idx, erros
+
+def historico_ativo(t, classe, moeda, usd_hist):
+    if classe == "cripto":
+        try:
+            h, _ = yahoo_mensal(f"{t}-BRL")
+            return h, "BRL"
+        except Exception:
+            h, _ = yahoo_mensal(f"{t}-USD")
+            return {m: round(v * usd_hist.get(m, 0), 6) for m, v in h.items() if usd_hist.get(m)}, "BRL"
+    h, cur = yahoo_mensal(yahoo_symbol(t, classe, moeda))
+    return h, ("USD" if cur == "USD" else "BRL")
 
 # ---------------- Status Invest ----------------
 SI_PATH = {"acao": "acao", "fii": "fii", "bdr": "bdr", "etf": "etf"}
@@ -367,11 +419,32 @@ def main():
             erros.append(a["ticker"])
         time.sleep(0.4)
 
+    # histórico mensal de preços e índices (para a aba Rentabilidade)
+    idx, erros_idx = indices_mensais()
+    if idx:
+        linhas.append({"col": "indices", "id": "mensal", "data": {**idx, "atualizadoEm": agora, "obs": "IFIX, SMLL e IDIV aproximados pelos ETFs XFIX11, SMAL11 e DIVO11"}})
+    log(f"Índices: {', '.join(f'{k}={len(v)}' for k, v in idx.items())}" + (f"  ERROS: {erros_idx}" if erros_idx else ""))
+    n_hist = 0
+    for a in ativos:
+        try:
+            h, cur = historico_ativo(a["ticker"], a["classe"], a["moeda"], idx.get("USDBRL", {}))
+            if h:
+                linhas.append({"col": "historico", "id": safe_id(a["ticker"]), "data": {"ticker": a["ticker"], "moeda": cur, "meses": h, "atualizadoEm": agora}})
+                n_hist += 1
+        except Exception as e:
+            log(f"  histórico {a['ticker']}: {e}")
+        time.sleep(0.25)
+    log(f"Históricos mensais: {n_hist}/{len(ativos)}")
+
     resumo = f"{ok}/{len(ativos)} cotações, {n_prov} proventos" + (f"; sem cotação: {', '.join(erros)}" if erros else "")
     linhas.append({"col": "config", "id": "mercado", "data": {"usdbrl": usd, "atualizadoEm": agora, "resumo": resumo}})
     log("RESUMO: " + resumo)
     if teste:
-        print(json.dumps(linhas[:6], ensure_ascii=False, indent=1))
+        print(json.dumps([l for l in linhas if l["col"] not in ("indices", "historico")][:4], ensure_ascii=False, indent=1))
+        for l in linhas:
+            if l["col"] == "historico":
+                m = l["data"]["meses"]; ks = sorted(m)
+                print("HIST", l["id"], l["data"]["moeda"], len(ks), ks[:1], ks[-3:], [m[k] for k in ks[-3:]])
         return
     if usd is None:  # mantém o dólar anterior
         try:
