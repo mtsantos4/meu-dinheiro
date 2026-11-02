@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102112055';
+const APP_BUILD = '20261102112545';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -673,10 +673,17 @@ function saldoConta(id, {previsto=false, ate=null}={}){
   if (previsto && ate) s -= faturasAPagar(id, ate).reduce((x,f)=>x+f.aberto,0);
   return s;
 }
+// conta que paga o cartão: a cadastrada; se não houver, a usada no último pagamento de fatura; se só existir uma conta, ela
+function contaPagamentoCartao(k){
+  if (k.contaId && D.contas[k.contaId]) return k.contaId;
+  const ult = txAtivas().filter(t=>t.tipo==='pagamento_fatura' && t.cartaoId===k.id && t.contaId).sort((a,b)=>b.data.localeCompare(a.data))[0];
+  if (ult) return ult.contaId;
+  const cs = list('contas').filter(c=>!c.arquivada && (c.moeda||'BRL')==='BRL'); return cs.length===1 ? cs[0].id : null;
+}
 // faturas em aberto dos cartões pagos por esta conta, com vencimento entre o início do mês atual e a data limite
 function faturasAPagar(contaId, ate){
   const out=[]; const ini = monthOf(todayISO())+'-01';
-  for (const k of list('cartoes').filter(k=>k.contaId===contaId)){
+  for (const k of list('cartoes').filter(k=>contaPagamentoCartao(k)===contaId)){
     const meses = new Set(txAtivas().filter(t=>t.cartaoId===k.id && t.faturaMes).map(t=>t.faturaMes));
     for (const ym of meses){ const venc = `${ym}-${pad(Math.min(+k.vencimento||10, +ultimoDia(ym).slice(8)))}`;
       if (venc < ini || venc > ate) continue; const f=fatura(k.id, ym); const aberto=f.total-f.pago;
@@ -695,6 +702,7 @@ function abrirPrevisao(id, ym){
     <table><tbody><tr><td>Saldo de hoje</td><td class="num"><b>${money(atual,mo)}</b></td></tr></tbody></table>
     <div class="donutleg" style="max-height:340px;margin:8px 0">${itens.length? itens.map(i=>`<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line);font-size:13.5px"><span class="muted" style="width:46px">${i.data.slice(8)}/${i.data.slice(5,7)}</span><span style="flex:1;min-width:0">${esc(i.desc)} ${i.fat?'<span class="pill">💳 fatura</span>':''}${i.atrasado?' <span class="pill warn">pendente</span>':''}</span><span class="num ${i.v>=0?'pos':'neg'}">${i.v>=0?'+':'−'}${money(Math.abs(i.v),mo)}</span></div>`).join('') : '<div class="hint" style="padding:8px 0">Nenhum lançamento pendente até o fim do mês.</div>'}</div>
     <table><tbody><tr><td><b>Previsto em ${fmtData(ate)}</b></td><td class="num"><b class="${prev>=0?'pos':'neg'}">${money(prev,mo)}</b></td></tr></tbody></table>
+    ${(()=>{ const sem=list('cartoes').filter(k=>!contaPagamentoCartao(k)); return sem.length? `<div class="banner" style="margin-top:8px">Sem conta de pagamento definida: ${sem.map(k=>esc(k.nome)).join(', ')}. A fatura desses cartões não entra em nenhuma previsão. Defina em Contas e cartões › toque no cartão.</div>`:''; })()}
     <div class="hint" style="margin-top:6px">Entram: lançamentos com data até o fim do mês ainda não pagos (inclusive atrasados) e faturas em aberto dos cartões pagos por esta conta que vencem no período.</div>
     <div class="mfoot"><div class="sp"></div><button class="btn pri" data-close>Fechar</button></div>`);
 }
