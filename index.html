@@ -238,7 +238,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102002143';
+const APP_BUILD = '20261102002625';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -974,8 +974,9 @@ function desenharRentab(){
   const labels = [mesCurto(addMonths(meses[0],-1))].concat(meses.map(mesCurto));
   let a=1; const port=[0].concat(P.map(l=>{ a*=1+l.r; return (a-1)*100; }));
   const cores={CDI:'#eab308',IPCA:'#ef4444',IFIX:'#3b82f6',IBOV:'#a855f7',SMLL:'#14b8a6',IDIV:'#f97316',IVVB11:'#ec4899'};
-  const ds=[{label:'Rentabilidade', data:port, borderColor:cssv('--acc'), backgroundColor:cssv('--acc2'), fill:true, tension:.25, pointRadius:2, borderWidth:2.5}];
-  for (const n of ['CDI','IPCA','IFIX','IBOV','SMLL','IDIV','IVVB11']){ const s=serieIndice(n, meses); if(!s) continue; ds.push({label:n, data:[0].concat(s), borderColor:cores[n], backgroundColor:cores[n], fill:false, tension:.25, pointRadius:0, borderWidth:1.8, hidden: n!=='CDI', spanGaps:true}); }
+  const hexA=(h,al)=>{ h=h.replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16); return `rgba(${n>>16&255},${n>>8&255},${n&255},${al})`; };
+  const ds=[{label:'Rentabilidade', data:port, borderColor:cssv('--acc'), backgroundColor:hexA(cssv('--acc'),.12), fill:'origin', tension:.25, pointRadius:2, borderWidth:2.5, order:10}];
+  for (const n of ['CDI','IPCA','IFIX','IBOV','SMLL','IDIV','IVVB11']){ const s=serieIndice(n, meses); if(!s) continue; ds.push({label:n, data:[0].concat(s), borderColor:cores[n], backgroundColor:cores[n], fill:false, tension:.25, pointRadius:0, borderWidth:2, hidden: n!=='CDI', spanGaps:true, order:1}); }
   chart('chRent',{type:'line',data:{labels,datasets:ds},options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:cssv('--text'),boxWidth:12,boxHeight:3,usePointStyle:false}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${c.parsed.y==null?'—':fmtN(c.parsed.y,2)+'%'}`}}},scales:{x:{ticks:{color:cssv('--muted'),maxRotation:0,autoSkip:true},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>v+'%'},grid:{color:cssv('--line')}}}}});
 }
 function alocacao(cart){ const o={}; cart.ativos.forEach(r=>o[r.classe||'outro']=(o[r.classe||'outro']||0)+r.valorBRL); return o; }
