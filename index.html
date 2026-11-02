@@ -177,11 +177,18 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 ::-webkit-scrollbar-corner{background:transparent}
 .donutleg,.ddpanel,.modal,.tblwrap{scrollbar-gutter:stable}
 .donutleg{padding-right:6px}
+.invtop{flex-wrap:wrap;row-gap:10px;gap:8px}.invtop h1{display:none}.invtop .btn{padding:7px 12px}
+.invtabs{order:0}.invtabs button{padding:6px 10px}
+.sparkbox{height:38px;margin:4px 0}
+.resumogrid{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:14px}
+.lucrobar{height:8px;border-radius:99px;background:var(--neg);overflow:hidden;margin-top:10px;opacity:.85}.lucrobar>i{display:block;height:100%;background:var(--pos)}
+.provgrid{display:grid;grid-template-columns:minmax(260px,330px) minmax(0,1fr);gap:14px;margin-bottom:14px}
+.segbtn{display:inline-flex;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:3px}.segbtn button{border:0;background:none;padding:6px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:500}.segbtn button.on{background:var(--panel);color:var(--text);box-shadow:var(--shadow)}
 .rtab td,.rtab th{padding:8px 6px;font-size:13px}
 .loading{padding:60px;text-align:center;color:var(--muted)}
 body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:none!important}
 .login{max-width:400px;margin:10vh auto 0}
-@media (max-width:1000px){.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:1fr 1fr}}
+@media (max-width:1000px){.resumogrid,.provgrid{grid-template-columns:minmax(0,1fr)}.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:1fr 1fr}}
 @media (max-width:760px){
   nav.side{display:none}
   main{padding:16px 14px 110px}
@@ -194,6 +201,8 @@ body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:no
   .ovl{align-items:flex-end;padding:0}
   .modal{border-radius:18px 18px 0 0;max-height:94vh}
   .frm{grid-template-columns:minmax(0,1fr)}
+  .resumogrid,.provgrid{grid-template-columns:minmax(0,1fr)}
+  .invtop h1{display:none}.invtabs{order:2;width:100%}
   .stickytop{margin:-16px -14px 10px;padding:12px 14px 8px}
   .stickytop header.top{margin-bottom:8px}.stickytop header.top h1{font-size:19px}
   .kpimini .val{font-size:14px}.kpimini .card{padding:7px 9px}
@@ -259,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102010812';
+const APP_BUILD = '20261102012220';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -282,7 +291,7 @@ const G = { mercado:{}, proventos:{}, config:{}, historico:{}, indices:{}, setor
 const loaded = {}; let store = null, sb = null, userId = null, userEmail = '', userNome = '', canWrite = true, dbFail = false, started = null;
 const LINK_TIPO = (location.hash.match(/type=([a-z_]+)/)||[])[1] || ''; let linkTratado = false;
 let atualizando = null; // {desde: ms}
-const ui = { view: (location.hash||'#inicio').slice(1) || 'inicio', mes: monthOf(todayISO()), f:{conta:'',cat:'',tipo:'',q:''}, cartTab:'ativos', cfgTab:'categorias' };
+const ui = { view: (location.hash||'#inicio').slice(1) || 'inicio', mes: monthOf(todayISO()), f:{conta:'',cat:'',tipo:'',q:''}, cartTab:'resumo', cfgTab:'categorias' };
 const VIEWS = ['inicio','transacoes','contas','carteira','ajustes'];
 if (!VIEWS.includes(ui.view)) ui.view='inicio';
 
@@ -878,44 +887,64 @@ function vCarteira(){
   const upd = list('mercado').map(m=>m.atualizadoEm).filter(Boolean).sort().pop();
   const tab = ui.cartTab;
   let body='';
-  if (tab==='ativos'){
+  if (tab==='resumo'){
+    body = vResumoInvest();
+  } else if (tab==='ativos'){
     const grupos={}; cart.ativos.forEach(r=>(grupos[r.classe||'outro']=grupos[r.classe||'outro']||[]).push(r));
     const ordem=Object.entries(grupos).map(([cl,rs])=>({cl, rs, valor:rs.reduce((x,r)=>x+r.valorBRL,0), custo:rs.reduce((x,r)=>x+r.custoAtualBRL,0)})).sort((a,b)=>ordClasse(a.cl)-ordClasse(b.cl)||b.valor-a.valor);
     body = cart.ativos.length ? ordem.map(g=>{ const res=g.valor-g.custo;
-      return bloco('cart_'+g.cl, `<span class="dot" style="background:${CLASS_COR[g.cl]||'#64748b'}"></span>${CLASSES[g.cl]||g.cl} <span class="hint" style="font-weight:400">(${g.rs.length})</span><span class="sp"></span><span class="num" style="font-weight:600">${money(g.valor)}</span><span class="hint" style="font-weight:400;margin-left:8px">${fmtN(cart.total? g.valor/cart.total*100:0,1)}%</span><span class="num ${res>=0?'pos':'neg'}" style="font-weight:500;margin-left:10px;font-size:13px">${pct(g.custo? res/g.custo:0)}</span>`, `<div class="tblwrap"><table class="tfix"><thead><tr><th>Ativo</th><th class="num">Qtd</th><th class="num hide-m">Preço médio</th><th class="num">Cotação</th><th class="num">Valor</th><th class="num">Resultado</th><th class="num hide-m">% carteira</th></tr></thead><tbody>${g.rs.map(r=>`<tr class="click" data-act="editAtivo" data-id="${r.id}"><td><div style="font-weight:600">${esc(r.ticker)}</div><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome||'')}${r.mercado&&r.mercado.atualizadoEm?'':(r.nome?' · ':'')+'sem cotação'}</div></td><td class="num">${fmtQ(r.qtd)}</td><td class="num hide-m">${money(r.pm,r.moeda)}</td><td class="num">${r.preco!=null?money(r.preco,r.moeda):'—'}${Number.isFinite(r.variacao)&&r.variacao!==0?`<div class="hint ${r.variacao>=0?'pos':'neg'}">${pct(r.variacao/100)}</div>`:''}</td><td class="num">${money(r.valor,r.moeda)}${r.moeda==='USD'?`<div class="hint">${money(r.valorBRL)}</div>`:''}</td><td class="num ${r.resultado>=0?'pos':'neg'}">${money(r.resultado,r.moeda)}<div class="hint ${r.resultado>=0?'pos':'neg'}">${pct(r.resultadoPct)}</div></td><td class="num hide-m">${fmtN(r.peso*100,1)}%</td></tr>`).join('')}</tbody></table></div>`); }).join('') : '<div class="empty">Nenhum ativo em carteira. Lance sua primeira compra.</div>';
+      return bloco('cart_'+g.cl, `<span class="dot" style="background:${CLASS_COR[g.cl]||'#64748b'}"></span>${CLASSES[g.cl]||g.cl} <span class="hint" style="font-weight:400">(${g.rs.length})</span><span class="sp"></span><span class="num" style="font-weight:600">${money(g.valor)}</span><span class="hint" style="font-weight:400;margin-left:8px">${fmtN(cart.total? g.valor/cart.total*100:0,1)}%</span><span class="num ${res>=0?'pos':'neg'}" style="font-weight:500;margin-left:10px;font-size:13px">${pct(g.custo? res/g.custo:0)}</span>`, `<div class="tblwrap"><table class="tfix"><thead><tr><th>Ativo</th><th class="num">Qtd</th><th class="num hide-m">Preço médio</th><th class="num">Cotação</th><th class="num">Valor</th><th class="num">Resultado</th><th class="num hide-m">% carteira</th></tr></thead><tbody>${g.rs.map(r=>`<tr class="click" data-act="editAtivo" data-id="${r.id}"><td><div style="font-weight:600">${esc(r.ticker)}</div><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome||'')}${r.mercado&&r.mercado.atualizadoEm?'':(r.nome?' · ':'')+'sem cotação'}</div></td><td class="num">${fmtQ(r.qtd)}</td><td class="num hide-m">${money(r.pm,r.moeda)}</td><td class="num">${r.preco!=null?money(r.preco,r.moeda):'—'}${Number.isFinite(r.variacao)&&r.variacao!==0?`<div class="hint ${r.variacao>=0?'pos':'neg'}">${pct(r.variacao/100)}</div>`:''}</td><td class="num">${money(r.valor,r.moeda)}${r.moeda==='USD'?`<div class="hint">${money(r.valorBRL)}</div>`:''}</td><td class="num ${r.resultado>=0?'pos':'neg'}">${money(r.resultado,r.moeda)}<div class="hint ${r.resultado>=0?'pos':'neg'}">${pct(r.resultadoPct)}</div></td><td class="num hide-m">${fmtN(r.peso*100,1)}%</td></tr>`).join('')}</tbody></table></div>`); }).join('') : '<div class="empty">Nenhum ativo em carteira. Lance sua primeira compra.</div>'
+    body = painelPosicoes() + `<div class="card">${body}</div>`;
   } else if (tab==='operacoes'){
     const ops = list('operacoes').sort((a,b)=>(b.data+(b.criadoEm||'')).localeCompare(a.data+(a.criadoEm||'')));
     body = ops.length ? `<div class="tblwrap"><table><thead><tr><th>Data</th><th>Ativo</th><th>Tipo</th><th class="num">Qtd</th><th class="num">Preço</th><th class="num hide-m">Taxas</th><th class="num">Total</th></tr></thead><tbody>${ops.map(o=>{ const a=D.ativos[safeId(o.ticker)]||{}; const m=a.moeda||'BRL'; const tot = o.tipo==='desdobramento'? null : (+o.qtd*+o.preco + (o.tipo==='venda'?-1:1)*(+o.taxas||0)); return `<tr class="click" data-act="editOp" data-id="${o.id}"><td>${fmtData(o.data)}</td><td style="font-weight:600">${esc(o.ticker)}</td><td><span class="pill ${o.tipo==='compra'?'acc':''}">${o.tipo==='desdobramento'?'Desdobr. ×'+fmtQ(+o.fator):o.tipo[0].toUpperCase()+o.tipo.slice(1)}</span></td><td class="num">${o.tipo==='desdobramento'?'—':fmtQ(+o.qtd)}</td><td class="num">${o.tipo==='desdobramento'?'—':money(+o.preco,m)}</td><td class="num hide-m">${o.taxas?money(+o.taxas,m):'—'}</td><td class="num">${tot==null?'—':money(tot,m)}</td></tr>`;}).join('')}</tbody></table></div>` : '<div class="empty">Nenhuma operação lançada</div>';
   } else if (tab==='proventos'){
     const lin = p => `<tr class="click" data-act="editProv" data-id="${p.id}"><td style="font-weight:600">${esc(p.ticker)}</td><td>${TIPO_PROV[p.tipo]||p.tipo}</td><td class="hide-m">${fmtData(p.dataCom)}</td><td>${p.dataPagamento?fmtData(p.dataPagamento)+(p.pagamentoEstimado?' <span class="pill" title="Data estimada">est.</span>':''):'a definir'}</td><td class="num hide-m">${money(+p.valor,p.moeda)}</td><td class="num">${fmtQ(p.qtd)}</td><td class="num">${money(p.liquido,p.moeda)}</td></tr>`;
     const head = `<thead><tr><th>Ativo</th><th>Tipo</th><th class="hide-m">Data-com</th><th>Pagamento</th><th class="num hide-m">Valor/cota</th><th class="num">Cotas</th><th class="num">Líquido</th></tr></thead>`;
-    const pf = ui.provF = ui.provF || {ano:'', mes:'', ticker:'', classe:''};
+    const pf = ui.provF = Object.assign({ano:'', ticker:'', classe:'', modo:'mensal'}, ui.provF||{});
+    const atual=monthOf(todayISO()), ini12=addMonths(atual,-11);
+    const base = provs.filter(p=>(!pf.ticker||p.ticker===pf.ticker) && (!pf.classe||(p.ativo.classe||'outro')===pf.classe));
     const anoDe = p => (p.dataPagamento||p.dataCom||'').slice(0,4);
     const anos = [...new Set(provs.map(anoDe).filter(Boolean))].sort().reverse();
-    const tks = [...new Set(provs.map(p=>p.ticker))].sort();
-    const filt = provs.filter(p=> (!pf.ano || anoDe(p)===pf.ano) && (!pf.mes || (p.dataPagamento||p.dataCom||'').slice(5,7)===pf.mes) && (!pf.ticker || p.ticker===pf.ticker) && (!pf.classe || (p.ativo.classe||'outro')===pf.classe));
+    const pagosB = base.filter(p=>p.status==='pago');
+    const rec12 = pagosB.filter(p=>monthOf(p.dataPagamento)>=ini12), tot12 = rec12.reduce((x,p)=>x+p.liquidoBRL,0), totAll = pagosB.reduce((x,p)=>x+p.liquidoBRL,0);
+    const futB = base.filter(p=>p.status!=='pago'), totFutB = futB.reduce((x,p)=>x+p.liquidoBRL,0);
+    const dist = {}; rec12.forEach(p=>dist[p.ticker]=(dist[p.ticker]||0)+p.liquidoBRL); const distE=Object.entries(dist).sort((a,b)=>b[1]-a[1]);
+    DONUTS.prov = distE;
+    const filt = base.filter(p=> !pf.ano || anoDe(p)===pf.ano);
     const fut = filt.filter(p=>p.status!=='pago').sort((a,b)=>(a.dataPagamento||'9').localeCompare(b.dataPagamento||'9'));
     const pagos = filt.filter(p=>p.status==='pago').sort((a,b)=>b.dataPagamento.localeCompare(a.dataPagamento));
     const totRec = pagos.reduce((x,p)=>x+p.liquidoBRL,0), totFut = fut.reduce((x,p)=>x+p.liquidoBRL,0);
     const porMes = {}; pagos.forEach(p=>(porMes[monthOf(p.dataPagamento)]=porMes[monthOf(p.dataPagamento)]||[]).push(p));
     const porAtivo = {}; pagos.forEach(p=>{ const o=porAtivo[p.ticker]=porAtivo[p.ticker]||{v:0,n:0,cl:p.ativo.classe}; o.v+=p.liquidoBRL; o.n++; });
-    const filtros = `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <select id="pfAno" class="sel"><option value="">Todos os anos</option>${anos.map(a=>`<option ${pf.ano===a?'selected':''}>${a}</option>`).join('')}</select>
-      <select id="pfMes" class="sel"><option value="">Todos os meses</option>${MESES.map((m,k)=>`<option value="${pad(k+1)}" ${pf.mes===pad(k+1)?'selected':''} style="text-transform:capitalize">${m}</option>`).join('')}</select>
-      <select id="pfCls" class="sel"><option value="">Todas as classes</option>${[...new Set(provs.map(p=>p.ativo.classe||'outro'))].sort((a,b)=>ordClasse(a)-ordClasse(b)).map(c=>`<option value="${c}" ${pf.classe===c?'selected':''}>${CLASSES[c]||c}</option>`).join('')}</select>
-      <select id="pfTk" class="sel"><option value="">Todos os ativos</option>${tks.map(t=>`<option ${pf.ticker===t?'selected':''}>${esc(t)}</option>`).join('')}</select>
-      ${(pf.ano||pf.mes||pf.ticker||pf.classe)?'<button class="btn sm ghost" id="pfLimpa">Limpar filtros</button>':''}
-    </div>
-    <div class="kpimini" style="margin:0 0 12px"><div class="card"><div class="lbl">Recebidos${pf.ano?' em '+pf.ano:''}</div><div class="val pos">${money(totRec)}</div></div><div class="card"><div class="lbl">A receber</div><div class="val">${money(totFut)}</div></div><div class="card"><div class="lbl">Pagamentos</div><div class="val">${pagos.length}</div></div></div>`;
+    const tksOpt = [...new Set(provs.filter(p=>!pf.classe||(p.ativo.classe||'outro')===pf.classe).map(p=>p.ticker))].sort();
+    const selCls = `<select id="pfCls" class="sel"><option value="">Todos os tipos</option>${[...new Set(provs.map(p=>p.ativo.classe||'outro'))].sort((a,b)=>ordClasse(a)-ordClasse(b)).map(c=>`<option value="${c}" ${pf.classe===c?'selected':''}>${CLASSES[c]||c}</option>`).join('')}</select>`;
+    const selTk = `<select id="pfTk" class="sel"><option value="">Todos os ativos</option>${tksOpt.map(t=>`<option ${pf.ticker===t?'selected':''}>${esc(t)}</option>`).join('')}</select>`;
+    const selAno = `<select id="pfAno" class="sel"><option value="">Últimos 12 meses</option>${anos.map(a=>`<option value="${a}" ${pf.ano===a?'selected':''}>${a}</option>`).join('')}</select>`;
+    // histórico ano x mês (recebidos)
+    const hist = {}; base.filter(p=>p.status==='pago').forEach(p=>{ const y=p.dataPagamento.slice(0,4), m=+p.dataPagamento.slice(5,7); (hist[y]=hist[y]||Array(12).fill(0))[m-1]+=p.liquidoBRL; });
+    const anosH = Object.keys(hist).sort().reverse();
+    const resumoCard = `<div class="card"><h3>Resumo</h3>
+        <div class="hint">Média mensal (últ. 12 meses)</div><div class="val" style="font-size:22px;font-weight:700">${money(tot12/12)}</div>
+        <div class="row" style="justify-content:space-between;border-top:1px solid var(--line);margin-top:10px;padding-top:10px"><span class="hint">Total de 12 meses</span><b>${money(tot12)}</b></div>
+        <div class="row" style="justify-content:space-between;padding-top:8px"><span class="hint">Total recebido (desde o início)</span><b>${money(totAll)}</b></div>
+        <div class="row" style="justify-content:space-between;padding-top:8px"><span class="hint">A receber</span><b>${money(totFutB)}</b></div>
+        <div class="hint" style="border-top:1px solid var(--line);margin-top:10px;padding-top:10px">Distribuição em 12 meses</div>
+        ${distE.length? `<div class="row" style="gap:10px;align-items:center;margin-top:6px"><div style="width:120px;height:120px;flex:none"><canvas id="chProvDist"></canvas></div><div style="flex:1;min-width:0">${distE.slice(0,5).map(([t,v],k)=>`<div class="row" style="font-size:12.5px;padding:2px 0"><span class="dot" style="background:${PALETTE[k%PALETTE.length]}"></span><span style="flex:1">${esc(t)}</span><span class="muted">${fmtN(tot12?v/tot12*100:0,1)}%</span></div>`).join('')}${distE.length>5?`<div class="hint">+ ${distE.length-5} ativos</div>`:''}</div></div>` : '<div class="hint" style="margin-top:6px">Nada recebido nos últimos 12 meses.</div>'}
+      </div>`;
+    const evolCard = `<div class="card"><h3>Evolução de proventos<div class="sp"></div><div class="segbtn"><button data-pm="mensal" class="${pf.modo!=='anual'?'on':''}">Mensal</button><button data-pm="anual" class="${pf.modo==='anual'?'on':''}">Anual</button></div></h3>
+        <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px">${pf.modo!=='anual'?selAno:''}${selCls}${selTk}${(pf.ano||pf.ticker||pf.classe)?'<button class="btn sm ghost" id="pfLimpa">Limpar</button>':''}</div>
+        <div class="chartbox" style="height:300px"><canvas id="chProv"></canvas></div><div class="hint" style="margin-top:4px">Clique numa barra para ver os proventos daquele mês.</div></div>`;
+    const tabelaHist = anosH.length? `<div class="card" style="margin-bottom:14px"><h3>Histórico mensal <span class="hint" style="font-weight:400">· recebidos</span></h3><div class="tblwrap"><table class="rtab"><thead><tr><th>Ano</th>${MESES.map(m=>`<th class="num">${m.slice(0,3)}</th>`).join('')}<th class="num">Média</th><th class="num">Total</th></tr></thead><tbody>${anosH.map(y=>{ const v=hist[y]; const t=v.reduce((a,b)=>a+b,0); const nM = y===atual.slice(0,4)? +atual.slice(5,7) : 12; return `<tr><td><b>${y}</b></td>${v.map(x=>`<td class="num ${x?'':'muted'}">${x?fmtN(x,2):'–'}</td>`).join('')}<td class="num">${fmtN(t/nM,2)}</td><td class="num"><b>${fmtN(t,2)}</b></td></tr>`; }).join('')}</tbody></table></div></div>` : '';
     const mesesOrd = Object.keys(porMes).sort().reverse();
-    body = filtros + `<div class="chartbox" style="height:200px;margin-bottom:6px"><canvas id="chProv"></canvas></div>`
-      + bloco('prov_fut', `A receber e anunciados <span class="hint" style="font-weight:400">(${fut.length})</span><span class="sp"></span><span class="num">${money(totFut)}</span>`, fut.length?`<div class="tblwrap"><table>${head}<tbody>${fut.map(lin).join('')}</tbody></table></div>`:'<div class="hint" style="padding:10px 4px">Nenhum provento anunciado.</div>')
-      + bloco('prov_ativo', `Recebidos por ativo <span class="hint" style="font-weight:400">(${Object.keys(porAtivo).length})</span><span class="sp"></span><span class="num">${money(totRec)}</span>`, Object.keys(porAtivo).length? `<div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Classe</th><th class="num">Pagamentos</th><th class="num">Total líquido</th><th class="num">% do total</th></tr></thead><tbody>${Object.entries(porAtivo).sort((a,b)=>b[1].v-a[1].v).map(([t,o])=>`<tr><td style="font-weight:600">${esc(t)}</td><td class="hide-m">${CLASSES[o.cl]||''}</td><td class="num">${o.n}</td><td class="num">${money(o.v)}</td><td class="num">${fmtN(totRec? o.v/totRec*100:0,1)}%</td></tr>`).join('')}</tbody></table></div>` : '<div class="hint" style="padding:10px 4px">Nada recebido no filtro.</div>', true)
-      + `<h3 style="margin:16px 0 4px">Recebidos mês a mês</h3>`
-      + (mesesOrd.length? mesesOrd.map((m,k)=>{ const ls=porMes[m]; return bloco('prov_'+m, `<span style="text-transform:capitalize">${mesNome(m)}</span> <span class="hint" style="font-weight:400">(${ls.length})</span><span class="sp"></span><span class="num pos">${money(ls.reduce((x,p)=>x+p.liquidoBRL,0))}</span>`, `<div class="tblwrap"><table>${head}<tbody>${ls.map(lin).join('')}</tbody></table></div>`, k>=3); }).join('') : '<div class="hint" style="padding:8px 0">Nenhum provento recebido no filtro.</div>')
-      + `<div class="hint" style="margin-top:10px">Cotações e proventos são atualizados automaticamente nos dias úteis, às 8h e às 19h. JCP considera IR de ${fmtN(c.irJcp*100,0)}% e ativos em dólar ${fmtN(c.irExterior*100,0)}% retidos na fonte (ajustável em Ajustes).</div>`;
+    const blocos = bloco('prov_fut', `A receber e anunciados <span class="hint" style="font-weight:400">(${fut.length})</span><span class="sp"></span><span class="num">${money(totFut)}</span>`, fut.length?`<div class="tblwrap"><table>${head}<tbody>${fut.map(lin).join('')}</tbody></table></div>`:'<div class="hint" style="padding:10px 4px">Nenhum provento anunciado.</div>')
+      + bloco('prov_ativo', `Recebidos por ativo${pf.ano?' em '+pf.ano:''} <span class="hint" style="font-weight:400">(${Object.keys(porAtivo).length})</span><span class="sp"></span><span class="num">${money(totRec)}</span>`, Object.keys(porAtivo).length? `<div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Classe</th><th class="num">Pagamentos</th><th class="num">Total líquido</th><th class="num">% do total</th></tr></thead><tbody>${Object.entries(porAtivo).sort((a,b)=>b[1].v-a[1].v).map(([t,o])=>`<tr><td style="font-weight:600">${esc(t)}</td><td class="hide-m">${CLASSES[o.cl]||''}</td><td class="num">${o.n}</td><td class="num">${money(o.v)}</td><td class="num">${fmtN(totRec? o.v/totRec*100:0,1)}%</td></tr>`).join('')}</tbody></table></div>` : '<div class="hint" style="padding:10px 4px">Nada recebido no filtro.</div>', true)
+      + `<h3 style="margin:16px 0 4px">Recebidos mês a mês${pf.ano?' · '+pf.ano:''}</h3>`
+      + (mesesOrd.length? mesesOrd.map((m,k)=>{ const ls=porMes[m]; return `<div id="pm_${m}">`+bloco('prov_'+m, `<span style="text-transform:capitalize">${mesNome(m)}</span> <span class="hint" style="font-weight:400">(${ls.length})</span><span class="sp"></span><span class="num pos">${money(ls.reduce((x,p)=>x+p.liquidoBRL,0))}</span>`, `<div class="tblwrap"><table>${head}<tbody>${ls.map(lin).join('')}</tbody></table></div>`, k>=3)+'</div>'; }).join('') : '<div class="hint" style="padding:8px 0">Nenhum provento recebido no filtro.</div>')
+      + `<div class="hint" style="margin-top:10px">JCP considera IR de ${fmtN(c.irJcp*100,0)}% e ativos em dólar ${fmtN(c.irExterior*100,0)}% retidos na fonte (ajustável em Ajustes).</div>`;
+    body = `<div class="provgrid">${resumoCard}${evolCard}</div>${tabelaHist}<div class="card">${blocos}</div>`;
   } else if (tab==='rentab'){
-    body = vRentabilidade();
+    body = `<div class="card">${vRentabilidade()}</div>`;
   } else if (tab==='cadastro'){
     const todos = list('ativos').map(a=>({...a, pos:posicao(a.ticker), m:D.mercado[safeId(a.ticker)], nOps:opsDo(a.ticker).length})).sort((a,b)=>ordClasse(a.classe)-ordClasse(b.classe)||a.ticker.localeCompare(b.ticker));
     const grupos = {}; todos.forEach(a=>(grupos[a.classe||'outro']=grupos[a.classe||'outro']||[]).push(a));
@@ -923,21 +952,69 @@ function vCarteira(){
       + Object.entries(grupos).map(([cl,as])=>bloco('cad_'+cl, `<span class="dot" style="background:${CLASS_COR[cl]||'#64748b'}"></span>${CLASSES[cl]||cl} <span class="hint" style="font-weight:400">(${as.length})</span>`, `<div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Moeda</th><th>Proventos caem em</th><th class="num">Qtd</th><th class="num hide-m">Cotação</th><th class="num hide-m">Operações</th></tr></thead><tbody>${as.map(a=>`<tr class="click" data-act="editAtivo" data-id="${a.id}"><td><div style="font-weight:600">${esc(a.ticker)}</div>${a.nome?`<div class="hint">${esc(a.nome)}</div>`:''}</td><td class="hide-m">${a.moeda==='USD'?'US$':'R$'}</td><td>${a.contaProventosId&&D.contas[a.contaProventosId]?esc(contaNome(a.contaProventosId)):'<span class="hint">não lança</span>'}</td><td class="num">${a.pos.qtd>0?fmtQ(a.pos.qtd):a.nOps?'<span class="pill">vendido</span>':'<span class="pill">sem operações</span>'}</td><td class="num hide-m">${a.m&&a.m.preco!=null?money(+a.m.preco,a.moeda):'<span class="hint">sem cotação</span>'}${a.m&&a.m.atualizadoEm?`<div class="hint">${new Date(a.m.atualizadoEm).toLocaleDateString('pt-BR')}</div>`:''}</td><td class="num hide-m">${a.nOps}</td></tr>`).join('')}</tbody></table></div>`)).join('')
       : '<div class="empty">Nenhum ativo cadastrado. Use "+ Ativo" ou lance uma compra.</div>';
   } else if (tab==='alocacao'){
-    body = vPatrimonio(cart);
+    body = `<div class="card">${vPatrimonio(cart)}</div>`;
   }
+  const ABAS=[['resumo','Resumo'],['ativos','Posições'],['proventos','Proventos'],['alocacao','Patrimônio'],['rentab','Rentabilidade'],['operacoes','Operações'],['cadastro','Cadastro']];
+  const semCard = ['resumo','ativos','proventos','alocacao','rentab'].includes(tab);
   return `
   <div class="stickytop">
-  <header class="top"><h1>Investimentos</h1><div class="sp"></div><button class="btn" data-act="atualizarMercado" ${atualizando?'disabled':''}>${atualizando?'Atualizando…':'↻ Atualizar cotações'}</button><button class="btn hide-m" data-act="novoAtivo">+ Ativo</button><button class="btn pri hide-m" data-act="novaOp">+ Compra / venda</button></header>
-  <div class="kpimini k4">
-    <div class="card"><div class="lbl">Patrimônio investido</div><div class="val">${money(cart.total)}</div><div class="sub">Custo ${money(cart.custo)}</div></div>
-    <div class="card"><div class="lbl">Resultado</div><div class="val ${cart.resultado>=0?'pos':'neg'}">${money(cart.resultado)}</div><div class="sub ${cart.resultado>=0?'pos':'neg'}">${pct(cart.custo?cart.resultado/cart.custo:0)}</div></div>
-    <div class="card"><div class="lbl">Proventos 12 meses</div><div class="val">${money(rec12)}</div><div class="sub">média ${money(rec12/12)}/mês</div></div>
-    <div class="card"><div class="lbl">A receber</div><div class="val">${money(aRec)}</div><div class="sub">${atualizando? 'Buscando cotações e proventos…' : upd? 'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):'Aguardando 1ª atualização'} · US$ ${fmtN(c.usdbrl,2)}</div></div>
+  <header class="top invtop"><h1>Investimentos</h1><div class="tabs invtabs">${ABAS.map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div><div class="sp"></div>
+    <button class="btn" data-act="atualizarMercado" ${atualizando?'disabled':''} title="${upd?'Cotações de '+new Date(upd).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):''}">${atualizando?'Atualizando…':'↻ Atualizar'}</button>${tab==='proventos'?'<button class="btn hide-m" data-act="novoProv">+ Provento</button>':''}<button class="btn hide-m" data-act="novoAtivo">+ Ativo</button><button class="btn pri hide-m" data-act="novaOp" title="Compra, venda, desdobramento ou bonificação">+ Operação</button></header>
   </div>
-  <div class="row" style="justify-content:space-between;flex-wrap:wrap;margin-top:10px;gap:8px"><div class="tabs">${[['ativos','Carteira'],['rentab','Rentabilidade'],['alocacao','Patrimônio'],['proventos','Proventos'],['operacoes','Operações'],['cadastro','Ativos cadastrados']].map(([k,n])=>`<button class="${tab===k?'on':''}" data-act="cartTab" data-id="${k}">${n}</button>`).join('')}</div>${tab==='proventos'?'<button class="btn sm" data-act="novoProv">+ Provento manual</button>':''}</div>
-  </div>
-  <div class="card">${body}</div>`;
+  ${semCard? body : `<div class="card">${body}</div>`}`;
 }
+/* ============ painéis de Investimentos ============ */
+function resumoInvest(){
+  const cart=carteira(); const c=cfg(); const provs=proventosCalc(); const atual=monthOf(todayISO()); const ini12=addMonths(atual,-11);
+  let dia=0; cart.ativos.forEach(r=>{ const v=+r.variacao; if (Number.isFinite(v) && v!==0) dia += r.valorBRL*v/(100+v); });
+  const realizado = cart.todos.reduce((s,r)=>s+(r.realizado||0)*((r.moeda||'BRL')==='USD'?c.usdbrl:1),0);
+  const pagos=provs.filter(p=>p.status==='pago');
+  return { cart, dia, diaPct: (cart.total-dia)? dia/(cart.total-dia):0, ganho: cart.resultado+realizado,
+    provTotal: pagos.reduce((s,p)=>s+p.liquidoBRL,0), prov12: pagos.filter(p=>monthOf(p.dataPagamento)>=ini12).reduce((s,p)=>s+p.liquidoBRL,0),
+    aReceber: provs.filter(p=>p.status!=='pago').reduce((s,p)=>s+p.liquidoBRL,0) };
+}
+const cardPatrimonio = R => `<div class="card kpi"><div class="lbl">Patrimônio total</div><div class="val">${money(R.cart.total)} <span style="font-size:13px" class="${R.dia>=0?'pos':'neg'}">${R.dia>=0?'▲':'▼'} ${fmtN(Math.abs(R.diaPct)*100,2)}%</span></div><div class="sub">Valor investido <b>${money(R.cart.custo)}</b></div></div>`;
+function vResumoInvest(){
+  const R=resumoInvest(); const RR=calcRentab(''); const L=RR?RR.linhas:[];
+  const r12=acumular(L.slice(-12).map(l=>l.r)), rT=acumular(L.map(l=>l.r));
+  const st=ui.resumo=ui.resumo||{per:'12'};
+  return `<div class="grid g4" style="margin-bottom:14px">
+    ${cardPatrimonio(R)}
+    <div class="card kpi"><div class="lbl">Lucro total</div><div class="val ${R.ganho+R.provTotal>=0?'pos':'neg'}">${money(R.ganho+R.provTotal)}</div><div class="sub">Ganho de capital <b>${money(R.ganho)}</b> · Proventos <b>${money(R.provTotal)}</b></div></div>
+    <div class="card kpi"><div class="lbl">Proventos recebidos (12M)</div><div class="val">${money(R.prov12)}</div><div class="sub">Total <b>${money(R.provTotal)}</b> · a receber <b>${money(R.aReceber)}</b></div></div>
+    <div class="card kpi"><div class="lbl">Rentabilidade</div><div class="row" style="gap:10px;margin-top:4px"><div style="flex:1;min-width:0"><div class="hint">12 meses</div><div class="sparkbox"><canvas id="spk12"></canvas></div><span class="pill ${r12>=0?'acc':''}">${pct(r12)}</span></div><div style="flex:1;min-width:0"><div class="hint">Total</div><div class="sparkbox"><canvas id="spkT"></canvas></div><span class="pill ${rT>=0?'acc':''}">${pct(rT)}</span></div></div></div>
+  </div>
+  <div class="resumogrid">
+    <div class="card"><h3>Evolução do patrimônio<div class="sp"></div><select id="rsPer" class="sel">${[['12','Últimos 12 meses'],['24','Últimos 24 meses'],['tudo','Desde o início']].map(([v,n])=>`<option value="${v}" ${st.per===v?'selected':''}>${n}</option>`).join('')}</select></h3><div class="chartbox" style="height:300px"><canvas id="chRsEvol"></canvas></div></div>
+    <div class="card"><h3>Ativos na carteira</h3>${(()=>{ const ents=agrupar(R.cart.ativos, r=>CLASSES[r.classe||'outro']).sort((a,b)=>b[1]-a[1]); const tot=R.cart.total; const cores=Object.fromEntries(Object.entries(CLASSES).map(([k,v])=>[v,CLASS_COR[k]]));
+      return ents.length? `<div class="chartbox" style="height:200px"><canvas id="chRsCls"></canvas></div><div style="margin-top:10px">${ents.map(([k,v])=>`<div class="row" style="padding:4px 0;font-size:13px"><span class="dot" style="background:${cores[k]||'#64748b'}"></span><span style="flex:1">${k}</span><span class="num muted">${fmtN(tot?v/tot*100:0,2)}%</span><span class="num" style="width:110px">${money(v)}</span></div>`).join('')}</div>` : '<div class="hint">Sem posições</div>'; })()}</div>
+  </div>`;
+}
+function desenharResumoInvest(){
+  const st=ui.resumo; if ($('#rsPer')) $('#rsPer').onchange=()=>{ st.per=$('#rsPer').value; render(); };
+  const RR=calcRentab(''); const L=RR?RR.linhas:[];
+  const spark=(id, ls)=>{ if(!$('#'+id)||!ls.length) return; let a=1; const d=[0].concat(ls.map(l=>{a*=1+l.r; return (a-1)*100;})); const up=d[d.length-1]>=0;
+    chart(id,{type:'line',data:{labels:d.map((_,i)=>i),datasets:[{data:d,borderColor:up?cssv('--pos'):cssv('--neg'),borderWidth:2,pointRadius:0,tension:.35,fill:false}]},options:{maintainAspectRatio:false,animation:false,plugins:{legend:{display:false},tooltip:{enabled:false}},scales:{x:{display:false},y:{display:false}}}}); };
+  spark('spk12', L.slice(-12)); spark('spkT', L);
+  const ev=evolucaoPatrimonio(); if (ev && $('#chRsEvol')){ const P = st.per==='tudo'? ev : ev.slice(-(+st.per)); const tk={color:cssv('--muted')};
+    chart('chRsEvol',{type:'bar',data:{labels:P.map(l=>mesCurto(l.ym)),datasets:[
+      {label:'Valor aplicado',data:P.map(l=>l.aplicado),backgroundColor:'rgba(100,116,139,.55)',borderRadius:3,stack:'s'},
+      {label:'Ganho de capital',data:P.map(l=>l.patrimonio-l.aplicado),backgroundColor:P.map(l=>l.patrimonio-l.aplicado>=0?cssv('--pos'):cssv('--neg')),borderRadius:3,stack:'s'}]},
+      options:{maintainAspectRatio:false,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:cssv('--text'),boxWidth:12}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${money(c.parsed.y)}`,footer:it=>'Patrimônio: '+money(P[it[0].dataIndex].patrimonio)}}},scales:{x:{stacked:true,ticks:{...tk,maxRotation:0,autoSkip:true},grid:{display:false}},y:{stacked:true,ticks:{...tk,callback:v=>'R$ '+(Math.abs(v)>=1000? fmtN(v/1000,0)+' mil':fmtN(v,0))},grid:{color:cssv('--line')}}}}}); }
+  const cart=carteira(); const ents=agrupar(cart.ativos, r=>CLASSES[r.classe||'outro']); const cores=Object.fromEntries(Object.entries(CLASSES).map(([k,v])=>[v,CLASS_COR[k]]));
+  if (ents.length && $('#chRsCls')) chart('chRsCls',{type:'doughnut',data:{labels:ents.map(e=>e[0]),datasets:[{data:ents.map(e=>Math.round(e[1]*100)/100),backgroundColor:ents.map(e=>cores[e[0]]||'#64748b'),borderWidth:2,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'60%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}});
+}
+function painelPosicoes(){
+  const R=resumoInvest(); const rs=R.cart.ativos.slice().sort((a,b)=>b.resultadoPct-a.resultadoPct); const n=rs.length; const lucro=rs.filter(r=>r.resultado>0).length;
+  const melhor=rs[0], pior=rs[n-1];
+  return `<div class="grid g4" style="margin-bottom:14px">
+    ${cardPatrimonio(R)}
+    <div class="card kpi"><div class="lbl">Destaques da carteira</div>${n?`<div class="row" style="gap:12px;margin-top:6px"><div style="flex:1"><div class="hint">Melhor posição</div><div style="font-weight:700">${esc(melhor.ticker)}</div><span class="pill ${melhor.resultadoPct>=0?'acc':''}">${pct(melhor.resultadoPct)}</span></div><div style="flex:1"><div class="hint">Pior posição</div><div style="font-weight:700">${esc(pior.ticker)}</div><span class="pill" style="${pior.resultadoPct<0?'color:var(--neg)':''}">${pct(pior.resultadoPct)}</span></div></div>`:'<div class="hint">Sem posições</div>'}</div>
+    <div class="card kpi"><div class="lbl">Posições no lucro</div><div class="val">${lucro} de ${n} <span class="pill acc" style="font-size:12px">${n?fmtN(lucro/n*100,0):0}%</span></div><div class="lucrobar"><i style="width:${n?lucro/n*100:0}%"></i></div><div class="row hint" style="justify-content:space-between;margin-top:4px"><span class="pos">${lucro} no lucro ▲</span><span class="neg">${n-lucro} no prejuízo ▼</span></div></div>
+    <div class="card kpi"><div class="lbl">Resultado das posições</div><div class="val ${R.cart.resultado>=0?'pos':'neg'}">${money(R.cart.resultado)}</div><div class="sub ${R.cart.resultado>=0?'pos':'neg'}">${pct(R.cart.custo?R.cart.resultado/R.cart.custo:0)} sobre o investido</div></div>
+  </div>`;
+}
+
 /* ============ blocos retráteis ============ */
 try { ui.fechados = JSON.parse(localStorage.getItem('md_fechados')||'{}'); } catch(e){ ui.fechados = {}; }
 const blocoFechado = (key, padrao) => key in ui.fechados ? ui.fechados[key] : !!padrao;
@@ -1103,17 +1180,26 @@ function desenharPatrimonio(){
 }
 function alocacao(cart){ const o={}; cart.ativos.forEach(r=>o[r.classe||'outro']=(o[r.classe||'outro']||0)+r.valorBRL); return o; }
 afterRender.carteira = () => {
+  if (ui.cartTab==='resumo') desenharResumoInvest();
   if (ui.cartTab==='rentab') desenharRentab();
   if (ui.cartTab==='alocacao') desenharPatrimonio();
   if (ui.cartTab==='proventos'){
-    const pf=ui.provF||{}; const set=(k,v)=>{ pf[k]=v; render(); };
-    if ($('#pfAno')) $('#pfAno').onchange=e=>set('ano',e.target.value); if ($('#pfMes')) $('#pfMes').onchange=e=>set('mes',e.target.value);
+    const pf=ui.provF; const set=(k,v)=>{ pf[k]=v; if(k==='classe') pf.ticker=''; render(); };
+    if ($('#pfAno')) $('#pfAno').onchange=e=>set('ano',e.target.value);
     if ($('#pfCls')) $('#pfCls').onchange=e=>set('classe',e.target.value); if ($('#pfTk')) $('#pfTk').onchange=e=>set('ticker',e.target.value);
-    if ($('#pfLimpa')) $('#pfLimpa').onclick=()=>{ ui.provF={ano:'',mes:'',ticker:'',classe:''}; render(); };
+    if ($('#pfLimpa')) $('#pfLimpa').onclick=()=>{ Object.assign(pf,{ano:'',ticker:'',classe:''}); render(); };
+    document.querySelectorAll('[data-pm]').forEach(b=>b.onclick=()=>{ pf.modo=b.dataset.pm; if(pf.modo==='anual') pf.ano=''; render(); });
     const provs=proventosCalc().filter(p=>(!pf.ticker||p.ticker===pf.ticker)&&(!pf.classe||(p.ativo.classe||'outro')===pf.classe)); const base=monthOf(todayISO());
-    const meses = pf.ano ? [...Array(12)].map((_,i)=>`${pf.ano}-${pad(i+1)}`) : [...Array(12)].map((_,i)=>addMonths(base,i-11)).concat([addMonths(base,1),addMonths(base,2)]);
-    const val = m => provs.filter(p=>p.dataPagamento && monthOf(p.dataPagamento)===m).reduce((s,p)=>s+p.liquidoBRL,0);
-    chart('chProv',{type:'bar',data:{labels:meses.map(mesCurto),datasets:[{label:'Proventos',data:meses.map(val),backgroundColor:meses.map(m=>m>base?cssv('--acc2'):cssv('--acc')),borderColor:cssv('--acc'),borderWidth:meses.map(m=>m>base?1:0),borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+money(c.parsed.y)}}},scales:{x:{ticks:{color:cssv('--muted')},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>'R$ '+v},grid:{color:cssv('--line')}}}}});
+    let labels, rec, fut, chaves;
+    if (pf.modo==='anual'){ const ys=[...new Set(provs.filter(p=>p.dataPagamento).map(p=>p.dataPagamento.slice(0,4)))].sort(); chaves=ys; labels=ys;
+      rec=ys.map(y=>provs.filter(p=>p.status==='pago'&&p.dataPagamento.startsWith(y)).reduce((s,p)=>s+p.liquidoBRL,0)); fut=ys.map(y=>provs.filter(p=>p.status!=='pago'&&p.dataPagamento&&p.dataPagamento.startsWith(y)).reduce((s,p)=>s+p.liquidoBRL,0)); }
+    else { chaves = pf.ano ? [...Array(12)].map((_,i)=>`${pf.ano}-${pad(i+1)}`) : [...Array(12)].map((_,i)=>addMonths(base,i-11)).concat([addMonths(base,1),addMonths(base,2)]); labels=chaves.map(mesCurto);
+      rec=chaves.map(m=>provs.filter(p=>p.status==='pago'&&p.dataPagamento&&monthOf(p.dataPagamento)===m).reduce((s,p)=>s+p.liquidoBRL,0)); fut=chaves.map(m=>provs.filter(p=>p.status!=='pago'&&p.dataPagamento&&monthOf(p.dataPagamento)===m).reduce((s,p)=>s+p.liquidoBRL,0)); }
+    const tk={color:cssv('--muted')};
+    chart('chProv',{type:'bar',data:{labels,datasets:[{label:'Recebidos',data:rec,backgroundColor:cssv('--acc'),borderRadius:4,stack:'p'},{label:'A receber',data:fut,backgroundColor:'rgba(148,163,184,.55)',borderRadius:4,stack:'p'}]},
+      options:{maintainAspectRatio:false,onClick:(e,els)=>{ if(!els.length||pf.modo==='anual') return; const m=chaves[els[0].index]; const el=document.getElementById('pm_'+m); if(el){ const bl=el.querySelector('.bloco'); if(bl&&bl.classList.contains('fechado')) bl.querySelector('[data-toggle]').click(); el.scrollIntoView({behavior:'smooth',block:'start'}); } },
+        plugins:{legend:{labels:{color:cssv('--text'),boxWidth:12}},tooltip:{callbacks:{label:c=>` ${c.dataset.label}: ${money(c.parsed.y)}`}}},scales:{x:{stacked:true,ticks:{...tk,maxRotation:0,autoSkip:true},grid:{display:false}},y:{stacked:true,ticks:{...tk,callback:v=>'R$ '+fmtN(v,0)},grid:{color:cssv('--line')}}}}});
+    const dE=DONUTS.prov||[]; if (dE.length && $('#chProvDist')) chart('chProvDist',{type:'doughnut',data:{labels:dE.map(e=>e[0]),datasets:[{data:dE.map(e=>Math.round(e[1]*100)/100),backgroundColor:dE.map((e,k)=>PALETTE[k%PALETTE.length]),borderWidth:1,borderColor:cssv('--panel')}]},options:{maintainAspectRatio:false,cutout:'55%',plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` ${c.label}: ${money(c.parsed)}`}}}}});
   }
 };
 
