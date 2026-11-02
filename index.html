@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102012950';
+const APP_BUILD = '20261102020938';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -1387,7 +1387,28 @@ function abrirTransacao(id){
       if (!id) base.criadoEm = new Date().toISOString();
       const btn=$('#btSave',m); btn.disabled=true;
       try {
-        if (id){ await put('transacoes', id, base); }
+        if (id && t.grupo && txAtivas().filter(x=>x.grupo===t.grupo).length>1){
+          const ehParc = !!t.parcela;
+          const i = await escolher(ehParc?'Alterar compra parcelada':'Alterar lançamento repetido', [ehParc?'Só esta parcela':'Só este', ehParc?'Esta e as próximas parcelas':'Este e os próximos', ehParc?'Todas as parcelas':'Todos da série']);
+          if (i<0){ btn.disabled=false; return; }
+          await put('transacoes', id, base);
+          if (i>0){
+            const outros = txAtivas().filter(x=>x.grupo===t.grupo && x.id!==id && (i===2 || x.data>t.data || (x.data===t.data && (x.parcela||'')>(t.parcela||''))));
+            const dDias = Math.round((Date.parse(base.data+'T12:00:00')-Date.parse(t.data+'T12:00:00'))/86400000);
+            const mDiff = (ym1,ym2) => { const [a,b]=ym1.split('-').map(Number), [c,d]=ym2.split('-').map(Number); return (c-a)*12+(d-b); };
+            const dFat = (t.faturaMes && base.faturaMes && t.cartaoId===base.cartaoId) ? mDiff(t.faturaMes, base.faturaMes) : 0;
+            const mudouValor = Math.abs((+t.valor||0)-valor)>=0.005;
+            const itens = outros.map(o=>{ const d={...o}; delete d.id;
+              Object.assign(d, {tipo:base.tipo, descricao:base.descricao, categoriaId:base.categoriaId, contaId:base.contaId, cartaoId:base.cartaoId, contaDestinoId:base.contaDestinoId, obs:base.obs});
+              if (mudouValor) d.valor = valor;
+              if (dDias){ const x=new Date(o.data+'T12:00:00'); x.setDate(x.getDate()+dDias); d.data=`${x.getFullYear()}-${pad(x.getMonth()+1)}-${pad(x.getDate())}`; }
+              if (base.cartaoId){ d.faturaMes = (t.cartaoId!==base.cartaoId || !o.faturaMes) ? faturaMesPara(D.cartoes[base.cartaoId], d.data) : addMonths(o.faturaMes, dFat); d.pago=true; } else d.faturaMes=null;
+              return ['transacoes', o.id, d]; });
+            await putMany(itens);
+            toast(`${itens.length+1} lançamentos alterados`); close(); return;
+          }
+        }
+        else if (id){ await put('transacoes', id, base); }
         else if (F.rep.value){
           const n = Math.max(2, Math.min(120, parseInt(F.n.value)||2)); const grupo=uid();
           const vParc = F.rep.value==='parc' ? Math.round(valor/n*100)/100 : valor;
