@@ -491,7 +491,7 @@ def fundamentos_ativo(a, agora):
         sym_y = t
     elif classe == "cripto":
         sym_y = f"{t}-USD"
-    elif classe in ("etf",) or (classe == "acao" and not d):
+    elif classe in ("etf",) or (classe in ("acao", "fii") and not d):
         sym_y = yahoo_symbol(t, classe, moeda)
     if sym_y:
         try:
