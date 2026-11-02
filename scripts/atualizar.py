@@ -444,7 +444,10 @@ def fundamentus(ticker):
     for a, b in pares:
         a, b = _html.unescape(a).strip(), _html.unescape(b).strip()
         if a in _FUND and _FUND[a] not in d and b not in ("", "-"):
-            v = num(b.replace("%", ""))
+            try:
+                v = float(b.replace("%", "").replace(".", "").replace(",", ".").strip())
+            except ValueError:
+                v = None
             if v is not None:
                 d[_FUND[a]] = v
         elif a in _FUND_TXT and b and _FUND_TXT[a] not in info:
@@ -498,10 +501,24 @@ def fundamentos_ativo(a, agora):
             for k, v in iy.items():
                 info.setdefault(k, v)
             fontes.append("Yahoo Finance" + (f" ({sym_y})" if classe == "bdr" else ""))
+            if classe in ("bdr", "cripto"):  # valores por ação/preço do ativo de origem não se aplicam
+                for k in ("lpa", "vpa", "min52", "max52", "precoAlvo"):
+                    d.pop(k, None)
             if classe == "bdr":
                 info["ativoEua"] = sym_y
         except Exception as e:
             log(f"  yahoo resumo {t} ({sym_y}): {e}")
+    if "min52" not in d:
+        try:
+            sym52 = yahoo_symbol(t, classe, moeda)
+            r52 = yahoo_chart(sym52, "1y")
+            q = ((r52.get("indicators") or {}).get("quote") or [{}])[0]
+            lo = [x for x in (q.get("low") or []) if x]; hi = [x for x in (q.get("high") or []) if x]
+            if lo and hi:
+                f = USD[0] if (classe == "cripto" and sym52.endswith("-USD") and USD[0]) else 1
+                d["min52"], d["max52"] = round(min(lo) * f, 6), round(max(hi) * f, 6)
+        except Exception as e:
+            log(f"  52 semanas {t}: {e}")
     div = {}
     if classe != "cripto":
         try:
