@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102151807';
+const APP_BUILD = '20261102152335';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -476,7 +476,13 @@ function pedirNome(){
     $('#ok',m).onclick = async () => { const n=$('#fnome',m).nome.value.trim(); if(!n) return; const {error}=await sb.auth.updateUser({data:{nome:n}}); if(error) return toast(error.message); userNome=n; close(); render(); };
   });
 }
-async function sair(){ if (!(await confirmar('Sair desta conta?'))) return; try{ await sb.auth.signOut(); }catch(e){} location.replace(location.pathname); }
+async function sair(){
+  if (!(await confirmar('Deseja sair desta conta?', 'Sair'))) return;
+  try{ if (unsub){ unsub(); unsub=null; } }catch(e){}
+  try{ await Promise.race([sb.auth.signOut({scope:'local'}), new Promise(r=>setTimeout(r,2500))]); }catch(e){}
+  try{ Object.keys(localStorage).filter(k=>/^sb-.*-auth-token/.test(k)).forEach(k=>localStorage.removeItem(k)); }catch(e){}
+  location.replace(location.pathname + '?saiu=' + Date.now());
+}
 
 /* ============ cálculos: carteira ============ */
 function opsDo(ticker){ return list('operacoes').filter(o=>o.ticker===ticker).sort((a,b)=> (a.data+(a.criadoEm||'')).localeCompare(b.data+(b.criadoEm||''))); }
@@ -788,7 +794,7 @@ function renderNav(){
   $('#side').innerHTML = `<div class="brand"><i></i>Meu Dinheiro</div>` + VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${NAMES[v]}</button>`).join('') + `<div class="sidefoot"><div class="sideuser"><b>${esc(userNome||'')}</b><span>${esc(userEmail||'')}</span></div><button class="navbtn" id="btSair"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>Sair</button></div>`;
   const bs=$('#btSair'); if (bs) bs.onclick=()=>sair();
   $('#bottom').innerHTML = VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${SHORT[v]}</button>`).join('');
-  document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>go(b.dataset.v));
+  document.querySelectorAll('.navbtn[data-v]').forEach(b=>b.onclick=()=>go(b.dataset.v));
 }
 function paraTopo(){ const f=()=>{ window.scrollTo(0,0); document.documentElement.scrollTop=0; document.body.scrollTop=0; }; f(); requestAnimationFrame(f); setTimeout(f,60); }
 try{ history.scrollRestoration='manual'; }catch(e){}
