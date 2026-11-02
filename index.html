@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102114203';
+const APP_BUILD = '20261102114433';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -763,8 +763,10 @@ function renderNav(){
   $('#bottom').innerHTML = VIEWS.map(v=>`<button class="navbtn ${ui.view===v?'on':''}" data-v="${v}">${ICONS[v]}${SHORT[v]}</button>`).join('');
   document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>go(b.dataset.v));
 }
-function go(v){ ui.view=v; try{ history.replaceState(null,'','#'+v);}catch(e){ location.hash=v; } renderNav(); render(); window.scrollTo(0,0); }
-window.addEventListener('hashchange',()=>{ const v=location.hash.slice(1); if(VIEWS.includes(v)&&v!==ui.view){ui.view=v;renderNav();render();} });
+function paraTopo(){ const f=()=>{ window.scrollTo(0,0); document.documentElement.scrollTop=0; document.body.scrollTop=0; }; f(); requestAnimationFrame(f); setTimeout(f,60); }
+try{ history.scrollRestoration='manual'; }catch(e){}
+function go(v){ ui.view=v; try{ history.replaceState(null,'','#'+v);}catch(e){ location.hash=v; } renderNav(); render(true); }
+window.addEventListener('hashchange',()=>{ const v=location.hash.slice(1); if(VIEWS.includes(v)&&v!==ui.view){ui.view=v;renderNav();render(true);} });
 $('#fab').onclick = () => ui.view==='carteira' ? abrirOperacao() : abrirTransacao();
 
 /* ============ render ============ */
@@ -772,7 +774,7 @@ const charts = {};
 function chart(id, cfgC){ if (charts[id]) { charts[id].destroy(); delete charts[id]; } const el=document.getElementById(id); if(!el || !window.Chart) return; charts[id]=new Chart(el, cfgC); }
 const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
-function render(){
+function render(topo){
   if (!COLS.every(c=>loaded[c])) {
     if (dbFail) $('#main').innerHTML = `<div class="card empty">Não consegui carregar seus dados agora. Verifique a conexão; a página continua tentando.</div>`;
     return;
@@ -782,8 +784,9 @@ function render(){
   const sy = window.scrollY;
   $('#main').innerHTML = fns[ui.view]();
   bindView();
-  if (travaY===null) window.scrollTo(0, sy);
+  if (travaY===null) window.scrollTo(0, topo? 0 : sy);
   afterRender[ui.view] && afterRender[ui.view]();
+  if (topo && travaY===null) paraTopo();
 }
 const afterRender = {};
 
@@ -800,7 +803,7 @@ const ACTS = {
   editConta: id=>abrirConta(id), editCartao: id=>abrirCartao(id), pagarFatura: (id,b)=>abrirPagamento(id, b.dataset.mes),
   verFatura: (id,b)=>{ ui.f={conta:'c:'+id,cat:'',tipo:'',q:''}; ui.faturaVer=b.dataset.mes; go('transacoes'); },
   novaOp: ()=>abrirOperacao(), editOp: id=>abrirOperacao(id), editAtivo: id=>abrirAtivo(id), novoAtivo: ()=>abrirAtivo(),
-  cartTab: (id)=>{ ui.cartTab=id; render(); }, cfgTab: id=>{ ui.cfgTab=id; render(); },
+  cartTab: (id)=>{ ui.cartTab=id; render(true); }, cfgTab: id=>{ ui.cfgTab=id; render(true); },
   conferir: async id=>{ await patch('transacoes', id, {conferir:false}); toast('Provento conferido'); },
   conferirTodos: async ()=>{ for (const t of txAtivas().filter(t=>t.conferir)) await patch('transacoes', t.id, {conferir:false}); toast('Tudo conferido'); },
   editCat: id=>abrirCategoria(id), novaCat: ()=>abrirCategoria(),
