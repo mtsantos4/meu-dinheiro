@@ -161,6 +161,12 @@ input[type=date]::-webkit-date-and-time-value,input[type=month]::-webkit-date-an
 .tfix{table-layout:fixed}.tfix th:first-child,.tfix td:first-child{width:24%}
 .donutwrap{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .donutleg{max-height:220px;overflow:auto}
+.bloco{border:1px solid var(--line);border-radius:12px;margin:10px 0;overflow:hidden;background:var(--panel)}
+.blococab{display:flex;align-items:center;gap:8px;width:100%;background:var(--panel2);border:0;padding:10px 12px;cursor:pointer;font-weight:600;text-align:left;font-size:14px;color:var(--text)}
+.blococab .seta{display:inline-block;transition:transform .15s;color:var(--muted);width:14px}
+.bloco.fechado .seta{transform:rotate(-90deg)}
+.bloco.fechado .blococorpo{display:none}
+.blococorpo{padding:0 8px 4px}
 .rtab td,.rtab th{padding:8px 6px;font-size:13px}
 .loading{padding:60px;text-align:center;color:var(--muted)}
 body.deslogado nav.side,body.deslogado nav.bottom,body.deslogado .fab{display:none!important}
@@ -241,7 +247,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102003412';
+const APP_BUILD = '20261102010325';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -643,6 +649,7 @@ function bindView(){
   document.querySelectorAll('[data-mes]').forEach(b=>b.onclick=()=>{ ui.mes=addMonths(ui.mes,+b.dataset.mes); render(); });
   document.querySelectorAll('[data-act]').forEach(b=>b.onclick=(e)=>{ e.stopPropagation(); ACTS[b.dataset.act](b.dataset.id, b); });
   document.querySelectorAll('[data-tx]').forEach(b=>b.onclick=()=>abrirTransacao(b.dataset.tx));
+  ligarBlocos();
 }
 const ACTS = {
   novaTx: ()=>abrirTransacao(), novaConta: ()=>abrirConta(), novoCartao: ()=>abrirCartao(),
@@ -861,28 +868,45 @@ function vCarteira(){
     const grupos={}; cart.ativos.forEach(r=>(grupos[r.classe||'outro']=grupos[r.classe||'outro']||[]).push(r));
     const ordem=Object.entries(grupos).map(([cl,rs])=>({cl, rs, valor:rs.reduce((x,r)=>x+r.valorBRL,0), custo:rs.reduce((x,r)=>x+r.custoAtualBRL,0)})).sort((a,b)=>b.valor-a.valor);
     body = cart.ativos.length ? ordem.map(g=>{ const res=g.valor-g.custo;
-      return `<div class="grupoclasse"><h3 style="margin:14px 0 6px"><span class="dot" style="background:${CLASS_COR[g.cl]||'#64748b'}"></span>${CLASSES[g.cl]||g.cl} <span class="hint" style="font-weight:400">(${g.rs.length})</span><span class="sp"></span><span class="num" style="font-weight:600">${money(g.valor)}</span><span class="hint" style="font-weight:400;margin-left:8px">${fmtN(cart.total? g.valor/cart.total*100:0,1)}%</span><span class="num ${res>=0?'pos':'neg'}" style="font-weight:500;margin-left:10px;font-size:13px">${pct(g.custo? res/g.custo:0)}</span></h3>
-      <div class="tblwrap"><table class="tfix"><thead><tr><th>Ativo</th><th class="num">Qtd</th><th class="num hide-m">Preço médio</th><th class="num">Cotação</th><th class="num">Valor</th><th class="num">Resultado</th><th class="num hide-m">% carteira</th></tr></thead><tbody>${g.rs.map(r=>`<tr class="click" data-act="editAtivo" data-id="${r.id}"><td><div style="font-weight:600">${esc(r.ticker)}</div><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome||'')}${r.mercado&&r.mercado.atualizadoEm?'':(r.nome?' · ':'')+'sem cotação'}</div></td><td class="num">${fmtQ(r.qtd)}</td><td class="num hide-m">${money(r.pm,r.moeda)}</td><td class="num">${r.preco!=null?money(r.preco,r.moeda):'—'}${Number.isFinite(r.variacao)&&r.variacao!==0?`<div class="hint ${r.variacao>=0?'pos':'neg'}">${pct(r.variacao/100)}</div>`:''}</td><td class="num">${money(r.valor,r.moeda)}${r.moeda==='USD'?`<div class="hint">${money(r.valorBRL)}</div>`:''}</td><td class="num ${r.resultado>=0?'pos':'neg'}">${money(r.resultado,r.moeda)}<div class="hint ${r.resultado>=0?'pos':'neg'}">${pct(r.resultadoPct)}</div></td><td class="num hide-m">${fmtN(r.peso*100,1)}%</td></tr>`).join('')}</tbody></table></div></div>`; }).join('') : '<div class="empty">Nenhum ativo em carteira. Lance sua primeira compra.</div>';
+      return bloco('cart_'+g.cl, `<span class="dot" style="background:${CLASS_COR[g.cl]||'#64748b'}"></span>${CLASSES[g.cl]||g.cl} <span class="hint" style="font-weight:400">(${g.rs.length})</span><span class="sp"></span><span class="num" style="font-weight:600">${money(g.valor)}</span><span class="hint" style="font-weight:400;margin-left:8px">${fmtN(cart.total? g.valor/cart.total*100:0,1)}%</span><span class="num ${res>=0?'pos':'neg'}" style="font-weight:500;margin-left:10px;font-size:13px">${pct(g.custo? res/g.custo:0)}</span>`, `<div class="tblwrap"><table class="tfix"><thead><tr><th>Ativo</th><th class="num">Qtd</th><th class="num hide-m">Preço médio</th><th class="num">Cotação</th><th class="num">Valor</th><th class="num">Resultado</th><th class="num hide-m">% carteira</th></tr></thead><tbody>${g.rs.map(r=>`<tr class="click" data-act="editAtivo" data-id="${r.id}"><td><div style="font-weight:600">${esc(r.ticker)}</div><div class="hint" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.nome||'')}${r.mercado&&r.mercado.atualizadoEm?'':(r.nome?' · ':'')+'sem cotação'}</div></td><td class="num">${fmtQ(r.qtd)}</td><td class="num hide-m">${money(r.pm,r.moeda)}</td><td class="num">${r.preco!=null?money(r.preco,r.moeda):'—'}${Number.isFinite(r.variacao)&&r.variacao!==0?`<div class="hint ${r.variacao>=0?'pos':'neg'}">${pct(r.variacao/100)}</div>`:''}</td><td class="num">${money(r.valor,r.moeda)}${r.moeda==='USD'?`<div class="hint">${money(r.valorBRL)}</div>`:''}</td><td class="num ${r.resultado>=0?'pos':'neg'}">${money(r.resultado,r.moeda)}<div class="hint ${r.resultado>=0?'pos':'neg'}">${pct(r.resultadoPct)}</div></td><td class="num hide-m">${fmtN(r.peso*100,1)}%</td></tr>`).join('')}</tbody></table></div>`); }).join('') : '<div class="empty">Nenhum ativo em carteira. Lance sua primeira compra.</div>';
   } else if (tab==='operacoes'){
     const ops = list('operacoes').sort((a,b)=>(b.data+(b.criadoEm||'')).localeCompare(a.data+(a.criadoEm||'')));
     body = ops.length ? `<div class="tblwrap"><table><thead><tr><th>Data</th><th>Ativo</th><th>Tipo</th><th class="num">Qtd</th><th class="num">Preço</th><th class="num hide-m">Taxas</th><th class="num">Total</th></tr></thead><tbody>${ops.map(o=>{ const a=D.ativos[safeId(o.ticker)]||{}; const m=a.moeda||'BRL'; const tot = o.tipo==='desdobramento'? null : (+o.qtd*+o.preco + (o.tipo==='venda'?-1:1)*(+o.taxas||0)); return `<tr class="click" data-act="editOp" data-id="${o.id}"><td>${fmtData(o.data)}</td><td style="font-weight:600">${esc(o.ticker)}</td><td><span class="pill ${o.tipo==='compra'?'acc':''}">${o.tipo==='desdobramento'?'Desdobr. ×'+fmtQ(+o.fator):o.tipo[0].toUpperCase()+o.tipo.slice(1)}</span></td><td class="num">${o.tipo==='desdobramento'?'—':fmtQ(+o.qtd)}</td><td class="num">${o.tipo==='desdobramento'?'—':money(+o.preco,m)}</td><td class="num hide-m">${o.taxas?money(+o.taxas,m):'—'}</td><td class="num">${tot==null?'—':money(tot,m)}</td></tr>`;}).join('')}</tbody></table></div>` : '<div class="empty">Nenhuma operação lançada</div>';
   } else if (tab==='proventos'){
     const lin = p => `<tr class="click" data-act="editProv" data-id="${p.id}"><td style="font-weight:600">${esc(p.ticker)}</td><td>${TIPO_PROV[p.tipo]||p.tipo}</td><td class="hide-m">${fmtData(p.dataCom)}</td><td>${p.dataPagamento?fmtData(p.dataPagamento)+(p.pagamentoEstimado?' <span class="pill" title="Data estimada">est.</span>':''):'a definir'}</td><td class="num hide-m">${money(+p.valor,p.moeda)}</td><td class="num">${fmtQ(p.qtd)}</td><td class="num">${money(p.liquido,p.moeda)}</td></tr>`;
     const head = `<thead><tr><th>Ativo</th><th>Tipo</th><th class="hide-m">Data-com</th><th>Pagamento</th><th class="num hide-m">Valor/cota</th><th class="num">Cotas</th><th class="num">Líquido</th></tr></thead>`;
-    const fut = provs.filter(p=>p.status!=='pago').sort((a,b)=>(a.dataPagamento||'9').localeCompare(b.dataPagamento||'9'));
-    const pagos = provs.filter(p=>p.status==='pago').slice(0,60);
-    body = `<div class="chartbox" style="height:200px;margin-bottom:12px"><canvas id="chProv"></canvas></div>
-      <h3 style="margin-top:8px">A receber e anunciados</h3>${fut.length?`<div class="tblwrap"><table>${head}<tbody>${fut.map(lin).join('')}</tbody></table></div>`:'<div class="hint" style="padding:8px 0">Nenhum provento anunciado para seus ativos no momento.</div>'}
-      <h3 style="margin-top:18px">Recebidos</h3>${pagos.length?`<div class="tblwrap"><table>${head}<tbody>${pagos.map(lin).join('')}</tbody></table></div>`:'<div class="hint" style="padding:8px 0">Nenhum provento recebido registrado ainda.</div>'}
-      <div class="hint" style="margin-top:10px">Cotações e proventos são atualizados automaticamente nos dias úteis, às 8h e às 19h. JCP considera IR de ${fmtN(c.irJcp*100,0)}% e ativos em dólar ${fmtN(c.irExterior*100,0)}% retidos na fonte (ajustável em Ajustes).</div>`;
+    const pf = ui.provF = ui.provF || {ano:'', mes:'', ticker:'', classe:''};
+    const anoDe = p => (p.dataPagamento||p.dataCom||'').slice(0,4);
+    const anos = [...new Set(provs.map(anoDe).filter(Boolean))].sort().reverse();
+    const tks = [...new Set(provs.map(p=>p.ticker))].sort();
+    const filt = provs.filter(p=> (!pf.ano || anoDe(p)===pf.ano) && (!pf.mes || (p.dataPagamento||p.dataCom||'').slice(5,7)===pf.mes) && (!pf.ticker || p.ticker===pf.ticker) && (!pf.classe || (p.ativo.classe||'outro')===pf.classe));
+    const fut = filt.filter(p=>p.status!=='pago').sort((a,b)=>(a.dataPagamento||'9').localeCompare(b.dataPagamento||'9'));
+    const pagos = filt.filter(p=>p.status==='pago').sort((a,b)=>b.dataPagamento.localeCompare(a.dataPagamento));
+    const totRec = pagos.reduce((x,p)=>x+p.liquidoBRL,0), totFut = fut.reduce((x,p)=>x+p.liquidoBRL,0);
+    const porMes = {}; pagos.forEach(p=>(porMes[monthOf(p.dataPagamento)]=porMes[monthOf(p.dataPagamento)]||[]).push(p));
+    const porAtivo = {}; pagos.forEach(p=>{ const o=porAtivo[p.ticker]=porAtivo[p.ticker]||{v:0,n:0,cl:p.ativo.classe}; o.v+=p.liquidoBRL; o.n++; });
+    const filtros = `<div class="row" style="flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <select id="pfAno" class="sel"><option value="">Todos os anos</option>${anos.map(a=>`<option ${pf.ano===a?'selected':''}>${a}</option>`).join('')}</select>
+      <select id="pfMes" class="sel"><option value="">Todos os meses</option>${MESES.map((m,k)=>`<option value="${pad(k+1)}" ${pf.mes===pad(k+1)?'selected':''} style="text-transform:capitalize">${m}</option>`).join('')}</select>
+      <select id="pfCls" class="sel"><option value="">Todas as classes</option>${[...new Set(provs.map(p=>p.ativo.classe||'outro'))].map(c=>`<option value="${c}" ${pf.classe===c?'selected':''}>${CLASSES[c]||c}</option>`).join('')}</select>
+      <select id="pfTk" class="sel"><option value="">Todos os ativos</option>${tks.map(t=>`<option ${pf.ticker===t?'selected':''}>${esc(t)}</option>`).join('')}</select>
+      ${(pf.ano||pf.mes||pf.ticker||pf.classe)?'<button class="btn sm ghost" id="pfLimpa">Limpar filtros</button>':''}
+    </div>
+    <div class="kpimini" style="margin:0 0 12px"><div class="card"><div class="lbl">Recebidos${pf.ano?' em '+pf.ano:''}</div><div class="val pos">${money(totRec)}</div></div><div class="card"><div class="lbl">A receber</div><div class="val">${money(totFut)}</div></div><div class="card"><div class="lbl">Pagamentos</div><div class="val">${pagos.length}</div></div></div>`;
+    const mesesOrd = Object.keys(porMes).sort().reverse();
+    body = filtros + `<div class="chartbox" style="height:200px;margin-bottom:6px"><canvas id="chProv"></canvas></div>`
+      + bloco('prov_fut', `A receber e anunciados <span class="hint" style="font-weight:400">(${fut.length})</span><span class="sp"></span><span class="num">${money(totFut)}</span>`, fut.length?`<div class="tblwrap"><table>${head}<tbody>${fut.map(lin).join('')}</tbody></table></div>`:'<div class="hint" style="padding:10px 4px">Nenhum provento anunciado.</div>')
+      + bloco('prov_ativo', `Recebidos por ativo <span class="hint" style="font-weight:400">(${Object.keys(porAtivo).length})</span><span class="sp"></span><span class="num">${money(totRec)}</span>`, Object.keys(porAtivo).length? `<div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Classe</th><th class="num">Pagamentos</th><th class="num">Total líquido</th><th class="num">% do total</th></tr></thead><tbody>${Object.entries(porAtivo).sort((a,b)=>b[1].v-a[1].v).map(([t,o])=>`<tr><td style="font-weight:600">${esc(t)}</td><td class="hide-m">${CLASSES[o.cl]||''}</td><td class="num">${o.n}</td><td class="num">${money(o.v)}</td><td class="num">${fmtN(totRec? o.v/totRec*100:0,1)}%</td></tr>`).join('')}</tbody></table></div>` : '<div class="hint" style="padding:10px 4px">Nada recebido no filtro.</div>', true)
+      + `<h3 style="margin:16px 0 4px">Recebidos mês a mês</h3>`
+      + (mesesOrd.length? mesesOrd.map((m,k)=>{ const ls=porMes[m]; return bloco('prov_'+m, `<span style="text-transform:capitalize">${mesNome(m)}</span> <span class="hint" style="font-weight:400">(${ls.length})</span><span class="sp"></span><span class="num pos">${money(ls.reduce((x,p)=>x+p.liquidoBRL,0))}</span>`, `<div class="tblwrap"><table>${head}<tbody>${ls.map(lin).join('')}</tbody></table></div>`, k>=3); }).join('') : '<div class="hint" style="padding:8px 0">Nenhum provento recebido no filtro.</div>')
+      + `<div class="hint" style="margin-top:10px">Cotações e proventos são atualizados automaticamente nos dias úteis, às 8h e às 19h. JCP considera IR de ${fmtN(c.irJcp*100,0)}% e ativos em dólar ${fmtN(c.irExterior*100,0)}% retidos na fonte (ajustável em Ajustes).</div>`;
   } else if (tab==='rentab'){
     body = vRentabilidade();
   } else if (tab==='cadastro'){
     const todos = list('ativos').map(a=>({...a, pos:posicao(a.ticker), m:D.mercado[safeId(a.ticker)], nOps:opsDo(a.ticker).length})).sort((a,b)=>(a.classe||'').localeCompare(b.classe||'')||a.ticker.localeCompare(b.ticker));
     const grupos = {}; todos.forEach(a=>(grupos[a.classe||'outro']=grupos[a.classe||'outro']||[]).push(a));
     body = todos.length ? `<div class="hint" style="margin-bottom:8px">${todos.length} ativo${todos.length>1?'s':''} cadastrado${todos.length>1?'s':''}, inclusive os já vendidos. Clique para editar classe, moeda e a conta onde caem os proventos.</div>`
-      + Object.entries(grupos).map(([cl,as])=>`<h3 style="margin-top:14px"><span class="dot" style="background:${CLASS_COR[cl]||'#64748b'}"></span>${CLASSES[cl]||cl} <span class="hint" style="font-weight:400">(${as.length})</span></h3>
-        <div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Moeda</th><th>Proventos caem em</th><th class="num">Qtd</th><th class="num hide-m">Cotação</th><th class="num hide-m">Operações</th></tr></thead><tbody>${as.map(a=>`<tr class="click" data-act="editAtivo" data-id="${a.id}"><td><div style="font-weight:600">${esc(a.ticker)}</div>${a.nome?`<div class="hint">${esc(a.nome)}</div>`:''}</td><td class="hide-m">${a.moeda==='USD'?'US$':'R$'}</td><td>${a.contaProventosId&&D.contas[a.contaProventosId]?esc(contaNome(a.contaProventosId)):'<span class="hint">não lança</span>'}</td><td class="num">${a.pos.qtd>0?fmtQ(a.pos.qtd):a.nOps?'<span class="pill">vendido</span>':'<span class="pill">sem operações</span>'}</td><td class="num hide-m">${a.m&&a.m.preco!=null?money(+a.m.preco,a.moeda):'<span class="hint">sem cotação</span>'}${a.m&&a.m.atualizadoEm?`<div class="hint">${new Date(a.m.atualizadoEm).toLocaleDateString('pt-BR')}</div>`:''}</td><td class="num hide-m">${a.nOps}</td></tr>`).join('')}</tbody></table></div>`).join('')
+      + Object.entries(grupos).map(([cl,as])=>bloco('cad_'+cl, `<span class="dot" style="background:${CLASS_COR[cl]||'#64748b'}"></span>${CLASSES[cl]||cl} <span class="hint" style="font-weight:400">(${as.length})</span>`, `<div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Moeda</th><th>Proventos caem em</th><th class="num">Qtd</th><th class="num hide-m">Cotação</th><th class="num hide-m">Operações</th></tr></thead><tbody>${as.map(a=>`<tr class="click" data-act="editAtivo" data-id="${a.id}"><td><div style="font-weight:600">${esc(a.ticker)}</div>${a.nome?`<div class="hint">${esc(a.nome)}</div>`:''}</td><td class="hide-m">${a.moeda==='USD'?'US$':'R$'}</td><td>${a.contaProventosId&&D.contas[a.contaProventosId]?esc(contaNome(a.contaProventosId)):'<span class="hint">não lança</span>'}</td><td class="num">${a.pos.qtd>0?fmtQ(a.pos.qtd):a.nOps?'<span class="pill">vendido</span>':'<span class="pill">sem operações</span>'}</td><td class="num hide-m">${a.m&&a.m.preco!=null?money(+a.m.preco,a.moeda):'<span class="hint">sem cotação</span>'}${a.m&&a.m.atualizadoEm?`<div class="hint">${new Date(a.m.atualizadoEm).toLocaleDateString('pt-BR')}</div>`:''}</td><td class="num hide-m">${a.nOps}</td></tr>`).join('')}</tbody></table></div>`)).join('')
       : '<div class="empty">Nenhum ativo cadastrado. Use "+ Ativo" ou lance uma compra.</div>';
   } else if (tab==='alocacao'){
     body = vPatrimonio(cart);
@@ -900,6 +924,12 @@ function vCarteira(){
   </div>
   <div class="card">${body}</div>`;
 }
+/* ============ blocos retráteis ============ */
+try { ui.fechados = JSON.parse(localStorage.getItem('md_fechados')||'{}'); } catch(e){ ui.fechados = {}; }
+const blocoFechado = (key, padrao) => key in ui.fechados ? ui.fechados[key] : !!padrao;
+const bloco = (key, cab, corpo, padraoFechado) => `<div class="bloco ${blocoFechado(key,padraoFechado)?'fechado':''}"><button type="button" class="blococab" data-toggle="${esc(key)}" data-padrao="${padraoFechado?1:0}"><span class="seta">▾</span>${cab}</button><div class="blococorpo">${corpo}</div></div>`;
+function ligarBlocos(){ document.querySelectorAll('[data-toggle]').forEach(b=>b.onclick=e=>{ if (e.target.closest('[data-act]') && e.target.closest('[data-act]')!==b) return; const el=b.closest('.bloco'); const f=!el.classList.contains('fechado'); el.classList.toggle('fechado', f); ui.fechados[b.dataset.toggle]=f; try{ localStorage.setItem('md_fechados', JSON.stringify(ui.fechados)); }catch(err){} }); }
+
 /* ============ Rentabilidade (estilo Investidor 10) ============ */
 const ultimoDia = ym => { const [y,m]=ym.split('-').map(Number); return `${ym}-${pad(new Date(y,m,0).getDate())}`; };
 function mesesEntre(a,b){ const out=[]; let m=a; while(m<=b){ out.push(m); m=addMonths(m,1); } return out; }
@@ -1062,7 +1092,12 @@ afterRender.carteira = () => {
   if (ui.cartTab==='rentab') desenharRentab();
   if (ui.cartTab==='alocacao') desenharPatrimonio();
   if (ui.cartTab==='proventos'){
-    const provs=proventosCalc(); const base=monthOf(todayISO()); const meses=[...Array(12)].map((_,i)=>addMonths(base,i-11)).concat([addMonths(base,1),addMonths(base,2)]);
+    const pf=ui.provF||{}; const set=(k,v)=>{ pf[k]=v; render(); };
+    if ($('#pfAno')) $('#pfAno').onchange=e=>set('ano',e.target.value); if ($('#pfMes')) $('#pfMes').onchange=e=>set('mes',e.target.value);
+    if ($('#pfCls')) $('#pfCls').onchange=e=>set('classe',e.target.value); if ($('#pfTk')) $('#pfTk').onchange=e=>set('ticker',e.target.value);
+    if ($('#pfLimpa')) $('#pfLimpa').onclick=()=>{ ui.provF={ano:'',mes:'',ticker:'',classe:''}; render(); };
+    const provs=proventosCalc().filter(p=>(!pf.ticker||p.ticker===pf.ticker)&&(!pf.classe||(p.ativo.classe||'outro')===pf.classe)); const base=monthOf(todayISO());
+    const meses = pf.ano ? [...Array(12)].map((_,i)=>`${pf.ano}-${pad(i+1)}`) : [...Array(12)].map((_,i)=>addMonths(base,i-11)).concat([addMonths(base,1),addMonths(base,2)]);
     const val = m => provs.filter(p=>p.dataPagamento && monthOf(p.dataPagamento)===m).reduce((s,p)=>s+p.liquidoBRL,0);
     chart('chProv',{type:'bar',data:{labels:meses.map(mesCurto),datasets:[{label:'Proventos',data:meses.map(val),backgroundColor:meses.map(m=>m>base?cssv('--acc2'):cssv('--acc')),borderColor:cssv('--acc'),borderWidth:meses.map(m=>m>base?1:0),borderRadius:4}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>' '+money(c.parsed.y)}}},scales:{x:{ticks:{color:cssv('--muted')},grid:{display:false}},y:{ticks:{color:cssv('--muted'),callback:v=>'R$ '+v},grid:{color:cssv('--line')}}}}});
   }
