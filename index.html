@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261102171320';
+const APP_BUILD = '20261107171401';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -769,6 +769,12 @@ function abrirPrevisao(id, ym){
     <div class="mfoot"><div class="sp"></div><button class="btn pri" data-close>Fechar</button></div>`);
 }
 const toBRL = (v, moeda) => moeda==='USD' ? v*cfg().usdbrl : v;
+/* fatura que aparece no Início: a mais antiga ainda não paga a partir deste mês; se todas estiverem pagas, a que está aberta para compras */
+function faturaAtualMes(k){
+  const hoje=todayISO(), aberta=faturaMesPara(k, hoje);
+  for (let ym=monthOf(hoje); ym<aberta; ym=addMonths(ym,1)){ const f=fatura(k.id, ym); if (f.aberto>0.005) return ym; }
+  return aberta;
+}
 function fatura(cartaoId, ym){
   let total=0, pago=0; const itens=[];
   for (const t of txAtivas()){
@@ -918,8 +924,8 @@ function vInicio(){
         return (vis.map(({ct,s})=>`<div class="row" style="padding:6px 0;cursor:pointer" data-act="comp" data-id="${ct.id}" title="Ver composição do saldo"><span class="dot" style="background:${ct.cor||'#94a3b8'}"></span><span style="flex:1">${esc(ct.nome)}</span><span class="num">${money(s, ct.moeda)}</span></div>`).join('') || '<div class="hint">Nenhuma conta com saldo</div>') + (oc? `<div class="hint" style="padding:2px 0 4px">${oc} conta${oc>1?'s':''} zerada${oc>1?'s':''} oculta${oc>1?'s':''}</div>`:''); })()}
       <div class="row" style="padding:6px 0;border-top:1px solid var(--line);margin-top:4px"><span class="dot" style="background:var(--acc)"></span><span style="flex:1">Investimentos</span><span class="num">${money(cart.total)}</span></div>
     </div>
-    <div class="card"><h3>Cartões · fatura de ${mesCurto(ym)}</h3>
-      ${cartoes.map(k=>{ const f=fatura(k.id, ym); const lim=+k.limite||0; const u=limiteUsado(k.id); return `<div style="padding:6px 0"><div class="row"><span class="dot" style="background:${k.cor||'#64748b'}"></span><span style="flex:1">${esc(k.nome)}</span><span class="num">${money(f.total)}</span></div>${lim?`<div class="bar" style="margin-top:6px"><i style="width:${Math.min(100,u/lim*100)}%"></i></div><div class="hint">Limite disponível ${money(lim-u)}</div>`:''}</div>`; }).join('') || '<div class="hint">Nenhum cartão ainda</div>'}
+    <div class="card"><h3>Cartões · fatura atual</h3>
+      ${cartoes.map(k=>{ const fm=faturaAtualMes(k), f=fatura(k.id, fm); const venc=`${fm}-${pad(Math.min(+k.vencimento||10, +ultimoDia(fm).slice(8)))}`; const lim=+k.limite||0; const u=limiteUsado(k.id); return `<div style="padding:6px 0"><div class="row"><span class="dot" style="background:${k.cor||'#64748b'}"></span><span style="flex:1;min-width:0">${esc(k.nome)}<div class="hint">${mesCurto(fm)} · vence ${fmtData(venc)}${f.pago>0.005&&f.aberto>0.005?` · falta ${money(f.aberto)}`:''}</div></span><span class="num">${money(f.total)}</span></div>${lim?`<div class="bar" style="margin-top:6px"><i style="width:${Math.min(100,u/lim*100)}%"></i></div><div class="hint">Limite disponível ${money(lim-u)}</div>`:''}</div>`; }).join('') || '<div class="hint">Nenhum cartão ainda</div>'}
     </div>
     <div class="card"><h3>Proventos · ${mesCurto(ui.mes)}<div class="sp"></div><button class="btn sm ghost" data-act="goCarteira">Ver todos</button></h3>
       <div class="donutleg" style="max-height:230px">${provMes.map(p=>`<div class="row" style="padding:6px 0"><span class="pill ${p.status==='pago'?'acc':''}">${tkA(p.ticker)}</span><span class="muted" style="flex:1;font-size:12.5px">${p.status==='pago'? '✓ recebido '+fmtData(p.dataPagamento) : p.dataPagamento? 'paga '+fmtData(p.dataPagamento)+(p.pagamentoEstimado?' (est.)':''):'pagamento a definir'}</span><span class="num">${money(p.liquido,p.moeda)}</span></div>`).join('') || `<div class="hint">Nenhum provento ${ui.mes<mesAtual?'recebido':'previsto'} em ${mesNome(ui.mes)}</div>`}</div>
