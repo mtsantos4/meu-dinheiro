@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261110111036';
+const APP_BUILD = '20261118110407';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -836,7 +836,13 @@ function paraTopo(){ const f=()=>{ window.scrollTo(0,0); document.documentElemen
 try{ history.scrollRestoration='manual'; }catch(e){}
 function go(v){ ui.view=v; try{ history.replaceState(null,'','#'+v);}catch(e){ location.hash=v; } renderNav(); render(true); }
 window.addEventListener('hashchange',()=>{ const v=location.hash.slice(1); if(VIEWS.includes(v)&&v!==ui.view){ui.view=v;renderNav();render(true);} });
-$('#fab').onclick = () => ui.view==='carteira' ? abrirOperacao() : abrirTransacao();
+$('#fab').onclick = () => ui.view==='carteira' ? escolherNovoInvest() : abrirTransacao();
+function escolherNovoInvest(){
+  const op = (act, ic, t, d) => `<button class="btn" data-esc="${act}" style="width:100%;justify-content:flex-start;gap:12px;padding:14px;margin-top:8px;text-align:left"><span style="font-size:22px">${ic}</span><span style="display:flex;flex-direction:column;align-items:flex-start"><b>${t}</b><div class="hint" style="font-weight:400">${d}</div></span></button>`;
+  modal(`<h2>Adicionar</h2>${op('op','💱','Operação','Compra, venda, desdobramento ou bonificação')}${op('ativo','➕','Ativo','Cadastrar um ativo para acompanhar, sem comprar')}${op('prov','💰','Provento','Lançar um provento manualmente')}<div class="mfoot"><div class="sp"></div><button class="btn" data-close>Cancelar</button></div>`, (m, close) => {
+    m.querySelectorAll('[data-esc]').forEach(b => b.onclick = () => { const k=b.dataset.esc; close(); setTimeout(()=> k==='op'? abrirOperacao() : k==='ativo'? abrirAtivo() : ACTS.novoProv(), 50); });
+  });
+}
 
 /* ============ render ============ */
 const charts = {};
@@ -1163,7 +1169,7 @@ function vCarteira(){
     const grupos = {}; todos.forEach(a=>(grupos[a.classe||'outro']=grupos[a.classe||'outro']||[]).push(a));
     body = todos.length ? `<div class="hint" style="margin-bottom:8px">${todos.length} ativo${todos.length>1?'s':''} cadastrado${todos.length>1?'s':''}, inclusive os já vendidos. Clique para editar classe, moeda e a conta onde caem os proventos.</div>`
       + Object.entries(grupos).map(([cl,as])=>bloco('cad_'+cl, `<span class="dot" style="background:${CLASS_COR[cl]||'#64748b'}"></span>${CLASSES[cl]||cl} <span class="hint" style="font-weight:400">(${as.length})</span>`, `<div class="tblwrap"><table><thead><tr><th>Ativo</th><th class="hide-m">Moeda</th><th>Proventos caem em</th><th class="num">Qtd</th><th class="num hide-m">Cotação</th><th class="num hide-m">Operações</th></tr></thead><tbody>${as.map(a=>`<tr class="click" data-act="editAtivo" data-id="${a.id}"><td><div style="font-weight:600">${tkA(a.ticker)}</div>${a.nome?`<div class="hint">${esc(a.nome)}</div>`:''}</td><td class="hide-m">${a.moeda==='USD'?'US$':'R$'}</td><td>${a.contaProventosId&&D.contas[a.contaProventosId]?esc(contaNome(a.contaProventosId)):'<span class="hint">não lança</span>'}</td><td class="num">${a.pos.qtd>0?fmtQ(a.pos.qtd):a.nOps?'<span class="pill">vendido</span>':'<span class="pill">sem operações</span>'}</td><td class="num hide-m">${a.m&&a.m.preco!=null?money(+a.m.preco,a.moeda):'<span class="hint">sem cotação</span>'}${a.m&&a.m.atualizadoEm?`<div class="hint">${new Date(a.m.atualizadoEm).toLocaleDateString('pt-BR')}</div>`:''}</td><td class="num hide-m">${a.nOps}</td></tr>`).join('')}</tbody></table></div>`)).join('')
-      : '<div class="empty">Nenhum ativo cadastrado. Use "+ Ativo" ou lance uma compra.</div>';
+      : '<div class="empty">Nenhum ativo cadastrado. Use "+ Ativo" (no celular, o botão +) ou lance uma compra.</div>';
   } else if (tab==='alocacao'){
     body = `<div class="card">${vPatrimonio(cart)}</div>`;
   }
