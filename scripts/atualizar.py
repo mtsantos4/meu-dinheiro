@@ -95,7 +95,7 @@ def dia_util_anterior(d):
 
 def tipo_padrao(txt, classe):
     t = (txt or "").lower()
-    if "jcp" in t or "juros" in t or "jrs" in t:
+    if "jcp" in t or "jscp" in t or "juros" in t or "jrs" in t:
         return "jcp"
     if "rend" in t:
         return "rendimento"
@@ -104,6 +104,42 @@ def tipo_padrao(txt, classe):
     if classe == "fii":
         return "rendimento"
     return "dividendo"
+
+# ---------------- Investidor10 (lista cada parcela de pagamento) ----------------
+I10_PATH = {"acao": "acoes", "fii": "fiis", "bdr": "bdrs", "etf": "etfs"}
+
+def investidor10_proventos(ticker, classe):
+    path = I10_PATH.get(classe)
+    if not path:
+        return []
+    req = urllib.request.Request(f"https://investidor10.com.br/{path}/{ticker.lower()}/", headers={"User-Agent": UA, "Accept-Language": "pt-BR,pt;q=0.9"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        txt = r.read().decode("utf-8", "replace")
+    out = []
+    for tb in re.findall(r"<table[^>]*>.*?</table>", txt, re.S):
+        cab = [re.sub(r"\s+", " ", _html_unesc(re.sub(r"<[^>]+>", "", c))).strip().lower() for c in re.findall(r"<th[^>]*>(.*?)</th>", tb, re.S)]
+        if "data com" not in cab or "pagamento" not in cab or "valor" not in cab:
+            continue
+        i_t, i_c, i_p, i_v = cab.index("tipo") if "tipo" in cab else None, cab.index("data com"), cab.index("pagamento"), cab.index("valor")
+        for tr in re.findall(r"<tr[^>]*>(.*?)</tr>", tb, re.S):
+            cels = [re.sub(r"\s+", " ", _html_unesc(re.sub(r"<[^>]+>", "", c))).strip() for c in re.findall(r"<td[^>]*>(.*?)</td>", tr, re.S)]
+            if len(cels) < len(cab):
+                continue
+            dc, pg = data_br(cels[i_c]), data_br(cels[i_p])
+            try:
+                v = float(cels[i_v].replace(".", "").replace(",", "."))
+            except ValueError:
+                continue
+            if dc and v > 0 and dentro_janela(dc):
+                out.append({"dataCom": dc, "dataPagamento": pg, "valor": round(v, 8), "moeda": "BRL", "tipoTxt": cels[i_t] if i_t is not None else ""})
+        break
+    # ordem estável: data-com e depois pagamento (a 1ª parcela fica com o id "base")
+    out.sort(key=lambda p: (p["dataCom"], p["dataPagamento"] or "9999"))
+    return out
+
+def _html_unesc(x):
+    import html as _h
+    return _h.unescape(x)
 
 # ---------------- Yahoo ----------------
 def yahoo_symbol(t, classe, moeda):
@@ -831,9 +867,14 @@ def processar(a, agora):
                 p["estimado"] = True
     else:
         try:
-            provs, fonte_prov = b3_proventos(t, classe), "B3"
+            provs, fonte_prov = investidor10_proventos(t, classe), "Investidor10"
         except Exception as e:
-            avisos.append(f"B3: {e}")
+            avisos.append(f"Investidor10: {e}")
+        if not provs:
+            try:
+                provs, fonte_prov = b3_proventos(t, classe), "B3"
+            except Exception as e:
+                avisos.append(f"B3: {e}")
         if not provs and classe != "etf":
             try:
                 provs, fonte_prov = statusinvest(t, classe), "Status Invest"
@@ -844,6 +885,7 @@ def processar(a, agora):
     return mercado, provs, fonte_prov, avisos
 
 CTX_PROVS, CTX_FONTE = {}, {}
+APAGAR_PROV = {}  # ticker -> ids atuais; os demais proventos desse ticker são antigos
 FUND_V = 2  # aumente para forçar a rebusca dos indicadores
 
 def main():
@@ -896,6 +938,8 @@ def main():
                 "ticker": a["ticker"], "tipo": tipo, "dataCom": p["dataCom"], "dataPagamento": p["dataPagamento"],
                 "valor": p["valor"], "moeda": p["moeda"], "fonte": fonte_prov, "pagamentoEstimado": bool(p.get("estimado")), "atualizadoEm": agora}})
             n_prov += 1
+        if provs and fonte_prov == "Investidor10" and not teste and vistos:
+            APAGAR_PROV[a["ticker"]] = set(vistos)
         if provs and fonte_prov in ("B3", "Status Invest"):
             CTX_PROVS[a["ticker"]] = provs; CTX_FONTE[a["ticker"]] = fonte_prov
         recentes = sorted(provs, key=lambda x: x["dataCom"], reverse=True)[:3]
@@ -951,6 +995,19 @@ def main():
             linhas[-1]["data"].pop("usdbrl")
     sb_upsert(url, key, linhas)
     log(f"Gravado no Supabase: {len(linhas)} registros")
+    # remove proventos antigos que a fonte atual não lista mais (ex.: total único trocado pelas parcelas)
+    apagados = 0
+    for t, ids in APAGAR_PROV.items():
+        try:
+            h = sb_headers(key); h["Prefer"] = "return=representation"
+            lista = ",".join('"' + i.replace('"', '') + '"' for i in sorted(ids))
+            q = f"{url}/rest/v1/mercado_docs?col=eq.proventos&data->>ticker=eq.{urllib.parse.quote(t)}&id=not.in.({urllib.parse.quote(lista, safe=',')})"
+            r = http_json(q, headers=h, method="DELETE")
+            apagados += len(r or [])
+        except Exception as e:
+            log(f"  limpar proventos {t}: {e}")
+    if apagados:
+        log(f"Proventos antigos removidos: {apagados}")
 
 if __name__ == "__main__":
     main()
