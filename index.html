@@ -268,7 +268,7 @@ const TIPOS_CONTA = {corrente:'Conta corrente',poupanca:'Poupança',corretora:'C
 const TIPO_PROV = {dividendo:'Dividendo',jcp:'JCP',rendimento:'Rendimento',amortizacao:'Amortização',outro:'Provento'};
 
 /* ============ versão do app (avisa quando há atualização publicada) ============ */
-const APP_BUILD = '20261123160454';
+const APP_BUILD = '20261123162126';
 async function checarVersao(){
   try {
     const r = await fetch('version.txt?t='+Date.now(), {cache:'no-store'}); if (!r.ok) return;
@@ -593,7 +593,7 @@ function proventosCalc(){
 /* ============ proventos -> transações automáticas ============ */
 let syncT; function scheduleSync(){ clearTimeout(syncT); syncT=setTimeout(syncProventos, 1500); }
 let syncing=false;
-const parcelasProvento = pid => txAtivas().filter(t=>t.origem==='provento_parcela' && t.ref===pid).sort((a,b)=>a.data.localeCompare(b.data));
+const parcelasProvento = pid => txAtivas().filter(t=>(t.origem==='provento_parcela' && t.ref===pid) || t.parcelaDe===pid).sort((a,b)=>a.data.localeCompare(b.data));
 async function syncProventos(){
   if (syncing || !canWrite || !store || !COLS.every(k=>loaded[k])) return;
   const c = cfg();
@@ -2068,6 +2068,20 @@ async function syncTxOperacao(oid){
 }
 
 /* ---------- Provento manual ---------- */
+function vincularParcelas(pid){
+  const p = D.proventos[pid]; if (!p) return;
+  const tk = p.ticker.toLowerCase(), raiz = tk.replace(/\d+$/,''); const a = D.ativos[safeId(p.ticker)]||{}; const nome = (a.nome||'').toLowerCase().split(/\s+/)[0]||'';
+  const ligados = new Set(txAtivas().filter(t=>t.parcelaDe||t.origem==='provento_parcela').map(t=>t.id));
+  const cand = txAtivas().filter(t=>t.tipo==='receita' && t.data>=p.dataCom && !ligados.has(t.id) && t.origem!=='provento' && !t.cartaoId)
+    .map(t=>{ const d=(t.descricao||'').toLowerCase(); const fala = d.includes(tk)||d.includes(raiz)||(nome.length>3&&d.includes(nome)); return {t, fala, prov: t.categoriaId===catProventos()}; })
+    .filter(x=>x.fala||x.prov).sort((x,y)=>(y.fala-x.fala)||x.t.data.localeCompare(y.t.data));
+  modal(`<h2>Vincular parcelas · ${esc(p.ticker)}</h2><div class="hint">Marque as receitas que foram parcelas deste provento (data-com ${fmtData(p.dataCom)}). Elas continuam nas transações; só passam a ser descontadas do pagamento final.</div>
+    <div style="max-height:50vh;overflow:auto;margin-top:10px">${cand.length? cand.map(({t,fala})=>`<label class="row" style="padding:8px 0;border-bottom:1px solid var(--line);gap:10px;cursor:pointer"><input type="checkbox" value="${t.id}" ${fala?'checked':''}><span style="flex:1;min-width:0">${esc(t.descricao||'')}<div class="hint">${fmtData(t.data)} · ${esc(contaNome(t.contaId))}</div></span><b class="num">${money(t.valor)}</b></label>`).join('') : '<div class="empty">Nenhuma receita parecida encontrada depois da data-com.</div>'}</div>
+    <div class="mfoot"><div class="sp"></div><button class="btn" data-close>Cancelar</button>${cand.length?'<button class="btn pri" id="ok">Vincular</button>':''}</div>`, (m, close) => {
+    if ($('#ok',m)) $('#ok',m).onclick = async () => { const ids=[...m.querySelectorAll('input[type=checkbox]:checked')].map(i=>i.value); if(!ids.length){ toast('Marque ao menos um'); return; }
+      await putMany(ids.map(id=>['transacoes', id, {...(U.transacoes[id]||D.transacoes[id]), parcelaDe: pid}])); close(); toast(`${ids.length} parcela${ids.length>1?'s':''} vinculada${ids.length>1?'s':''}`); abrirProvento(pid); };
+  });
+}
 function abrirParcelaProvento(pid){
   const p = D.proventos[pid]; if (!p) return; const a = D.ativos[safeId(p.ticker)]||{};
   const contas = list('contas').filter(c=>!c.arquivada); const cDef = a.contaProventosId || (contas[0]&&contas[0].id);
@@ -2097,9 +2111,10 @@ function abrirProvento(id){
       <div class="hint" style="margin-bottom:8px">Algumas empresas pagam o mesmo provento em várias parcelas, mas a B3 só informa a data final. Lance aqui cada parcela que caiu na conta: no pagamento final o app lança só o que faltar.</div>
       ${ps.map(t=>`<div class="row" style="padding:5px 0;border-bottom:1px solid var(--line)"><span style="flex:1">${fmtData(t.data)} · ${esc(contaNome(t.contaId))}</span><b class="num">${money(t.valor)}</b><button class="btn ghost sm" data-delparc="${t.id}" title="Excluir parcela">✕</button></div>`).join('')}
       ${pc&&pc.qtd>0?`<div class="row hint" style="padding:6px 0"><span style="flex:1">Total líquido previsto (${fmtQ(pc.qtd)} cotas)</span><span class="num">${money(pc.liquidoBRL||pc.liquido)}</span></div>${tot>0?`<div class="row hint" style="padding:0 0 6px"><span style="flex:1">Falta receber</span><span class="num">${money(Math.max(0,(pc.liquidoBRL||pc.liquido)-tot))}</span></div>`:''}`:''}
-      <button class="btn sm" id="addParc">+ Parcela recebida</button></div>`; })() : ''}<div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`,(m,close)=>{
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn sm" id="addParc">+ Parcela recebida</button><button class="btn sm ghost" id="vincParc">Vincular lançamentos que já existem</button></div></div>`; })() : ''}<div class="mfoot">${id?'<button class="btn danger" id="del">Excluir</button>':''}<div class="sp"></div><button class="btn" data-close>Cancelar</button><button class="btn pri" id="ok">Salvar</button></div>`,(m,close)=>{
     if ($('#addParc',m)) $('#addParc',m).onclick=()=>{ close(); abrirParcelaProvento(id); };
-    m.querySelectorAll('[data-delparc]').forEach(bt=>bt.onclick=async()=>{ if(!(await confirmar('Excluir esta parcela?'))) return; await del('transacoes', bt.dataset.delparc); close(); abrirProvento(id); });
+    if ($('#vincParc',m)) $('#vincParc',m).onclick=()=>{ close(); vincularParcelas(id); };
+    m.querySelectorAll('[data-delparc]').forEach(bt=>bt.onclick=async()=>{ const t=D.transacoes[bt.dataset.delparc]; if (t && t.parcelaDe===id && t.origem!=='provento_parcela'){ const {parcelaDe, ...resto}=U.transacoes[t.id]||t; await put('transacoes', t.id, {...resto, parcelaDe:null}); toast('Desvinculado (o lançamento continua nas transações)'); close(); abrirProvento(id); return; } if(!(await confirmar('Excluir esta parcela?'))) return; await del('transacoes', bt.dataset.delparc); close(); abrirProvento(id); });
     $('#ok',m).onclick=async()=>{ const F=$('#fv',m); const tk=F.ticker.value||p.ticker; const a=D.ativos[safeId(tk)]; if(!F.dataCom.value){toast('Informe a data-com');return;}
       const pid = id || safeId(`${tk}_${F.dataCom.value}_${F.tipo.value}`);
       await put('proventos', pid, {pagamentoEstimado:false, ticker:tk, tipo:F.tipo.value, dataCom:F.dataCom.value, dataPagamento:F.dataPagamento.value||null, valor:parseNum(F.valor.value), moeda:(a&&a.moeda)||'BRL', fonte:p.fonte||'manual'}); close(); scheduleSync(); };
